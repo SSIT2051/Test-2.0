@@ -1,0 +1,56 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Green Stem (Tilted to the right) -->
+    <path
+        android:fillColor="#00C853"
+        android:pathData="M51,28 L57,14 L62,15 L56,28 Z" />
+
+    <!-- Main Pumpkin Body (Vibrant Squircle) -->
+    <path
+        android:fillColor="#FF8200"
+        android:pathData="M37,27 H71 C80,27 87,34 87,43 V69 C87,78 80,85 71,85 H37 C28,85 21,78 21,69 V43 C21,34 28,27 37,27 Z" />
+
+    <!-- Left Darker Orange Vertical Stripe (Rib) -->
+    <path
+        android:fillColor="#E65100"
+        android:pathData="M44,27 H49 V85 H44 Z" />
+
+    <!-- Right Darker Orange Vertical Stripe (Rib) -->
+    <path
+        android:fillColor="#E65100"
+        android:pathData="M59,27 H64 V85 H59 Z" />
+
+    <!-- Top-Left Accent Dots (Cyan & Green) -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M27,34 A2.4,2.4 0 1,1 27,38.8 A2.4,2.4 0 1,1 27,34 Z" />
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M27,41 A2.4,2.4 0 1,1 27,45.8 A2.4,2.4 0 1,1 27,41 Z" />
+
+    <!-- Top-Right Accent Dots (Black & Yellow) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M81,34 A2.4,2.4 0 1,1 81,38.8 A2.4,2.4 0 1,1 81,34 Z" />
+    <path
+        android:fillColor="#FFD600"
+        android:pathData="M81,41 A2.4,2.4 0 1,1 81,45.8 A2.4,2.4 0 1,1 81,41 Z" />
+
+    <!-- Sharp Angular Eyes -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M36,42 L46,52 L36,52 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M72,42 L72,52 L62,52 Z" />
+
+    <!-- Wavy Jack-o'-Lantern Mouth -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M36,64 C40,71 46,73 54,68 C62,73 68,71 72,64 C70,72 63,77 54,74 C45,77 38,72 36,64 Z" />
+
+</vector>

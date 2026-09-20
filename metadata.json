@@ -1,0 +1,8 @@
+{
+  "name": "Remix PumpkinMC Mobile Manager",
+  "description": "Seamlessly manage your PumpkinMC servers with real-time console access, mod installation, tunnel configuration, and optimized resource monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
