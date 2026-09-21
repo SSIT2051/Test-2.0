@@ -31,6 +31,7 @@ import java.util.UUID
 class PumpkinViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val repository = PumpkinServerRepository(database)
+    val tunnelManager = com.example.domain.tunnel.TunnelManager(application, database.tunnelDao())
     val serverManager = PumpkinServerManager(repository, viewModelScope)
 
     val servers: StateFlow<List<ServerConfig>> = repository.servers.stateIn(
@@ -42,11 +43,15 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedServerId = MutableStateFlow<String?>(null)
     val selectedServerId: StateFlow<String?> = _selectedServerId.asStateFlow()
 
+    val activeServerTunnel: StateFlow<com.example.domain.tunnel.TunnelConfig?> = _selectedServerId.flatMapLatest { id ->
+        if (id != null) tunnelManager.observeTunnelForServer(id) else flowOf(null)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val activeServer: StateFlow<ServerConfig?> = combine(servers, _selectedServerId) { serverList, selectedId ->
-        when {
-            selectedId != null -> serverList.firstOrNull { it.id == selectedId }
-            serverList.isNotEmpty() -> serverList.first().also { _selectedServerId.value = it.id }
-            else -> null
+        if (selectedId != null) {
+            serverList.firstOrNull { it.id == selectedId }
+        } else {
+            null
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -141,26 +146,28 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            // Load and sync full official market catalog
+            // Load and sync official market catalog
             repository.refreshPluginsFromRemote()
+        }
+    }
 
-            // Check if default server needs auto-starting if state was RUNNING
-            servers.collect { list ->
-                if (_selectedServerId.value == null && list.isNotEmpty()) {
-                    _selectedServerId.value = list.first().id
-                }
-                list.forEach { server ->
-                    if (server.status == ServerStatus.RUNNING) {
-                        serverManager.startServer(server)
-                        PumpkinServerService.start(
-                            context = getApplication(),
-                            serverName = server.name,
-                            bedrockPort = server.bedrockPort,
-                            javaPort = server.port
-                        )
-                    }
-                }
-            }
+    fun deselectServer() {
+        _selectedServerId.value = null
+        _editingFile.value = null
+    }
+
+    fun toggleServerPower(server: ServerConfig) {
+        if (server.status == ServerStatus.RUNNING) {
+            serverManager.stopServer(server.id)
+            PumpkinServerService.stop(getApplication())
+        } else if (server.status == ServerStatus.STOPPED) {
+            serverManager.startServer(server)
+            PumpkinServerService.start(
+                context = getApplication(),
+                serverName = server.name,
+                bedrockPort = server.bedrockPort,
+                javaPort = server.port
+            )
         }
     }
 
@@ -188,34 +195,34 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
 
     fun startCurrentServer() {
         val server = activeServer.value ?: return
-        // Auto-assign dedicated unique tunnel domain and port if default or missing
-        val effectiveServer = if (server.playitDomain.isBlank() || server.playitDomain == "playit-free.gl.joinmc.link") {
-            val shortId = UUID.randomUUID().toString().take(6).lowercase()
-            val nameSlug = server.name.lowercase().filter { it.isLetterOrDigit() }.take(8).ifBlank { "smp" }
-            val autoTunnel = "$nameSlug-$shortId.gl.joinmc.link"
-            val updated = server.copy(
-                playitDomain = autoTunnel,
-                playitEnabled = true,
-                playitPort = if (server.playitPort == 0) 19132 else server.playitPort
-            )
-            updateServerConfig(updated)
-            updated
-        } else {
-            server
-        }
-
-        serverManager.startServer(effectiveServer)
+        serverManager.startServer(server)
         PumpkinServerService.start(
             context = getApplication(),
-            serverName = effectiveServer.name,
-            bedrockPort = effectiveServer.bedrockPort,
-            javaPort = effectiveServer.port
+            serverName = server.name,
+            bedrockPort = server.bedrockPort,
+            javaPort = server.port
         )
+
+        // Launch real tunnel provisioning asynchronously
+        if (server.playitEnabled) {
+            viewModelScope.launch {
+                val tunnel = tunnelManager.createAndStartTunnel(server, "gateway")
+                if (tunnel.publicHost.isNotBlank()) {
+                    updateServerConfig(server.copy(
+                        playitDomain = tunnel.displayEndpoint,
+                        playitPort = tunnel.publicPort
+                    ))
+                }
+            }
+        }
     }
 
     fun stopCurrentServer() {
         val server = activeServer.value ?: return
         serverManager.stopServer(server.id)
+        viewModelScope.launch {
+            tunnelManager.stopTunnel(server.id)
+        }
         PumpkinServerService.stop(getApplication())
     }
 
@@ -228,6 +235,17 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             bedrockPort = server.bedrockPort,
             javaPort = server.port
         )
+        if (server.playitEnabled) {
+            viewModelScope.launch {
+                val tunnel = tunnelManager.createAndStartTunnel(server, "gateway")
+                if (tunnel.publicHost.isNotBlank()) {
+                    updateServerConfig(server.copy(
+                        playitDomain = tunnel.displayEndpoint,
+                        playitPort = tunnel.publicPort
+                    ))
+                }
+            }
+        }
     }
 
     fun executeCommand(command: String) {
@@ -269,14 +287,23 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val shortId = UUID.randomUUID().toString().take(6).lowercase()
             val newId = "pumpkin_srv_$shortId"
-            val nameSlug = name.lowercase().filter { it.isLetterOrDigit() }.take(8).ifBlank { "smp" }
-            val designatedTunnel = "$nameSlug-$shortId.gl.joinmc.link"
-            val designatedBedrockPort = 19132
+
+            // Allocate non-conflicting ports dynamically using LocalPortAllocator
+            val currentServers = servers.value
+            com.example.domain.tunnel.LocalPortAllocator.registerAllocatedPorts(currentServers)
+            val allocatedJavaPort = com.example.domain.tunnel.LocalPortAllocator.allocatePort(
+                protocol = com.example.domain.tunnel.TunnelProtocol.TCP,
+                preferredPort = port
+            )
+            val allocatedBedrockPort = com.example.domain.tunnel.LocalPortAllocator.allocatePort(
+                protocol = com.example.domain.tunnel.TunnelProtocol.UDP,
+                preferredPort = 19132
+            )
 
             val newConfig = ServerConfig(
                 id = newId,
                 name = name,
-                port = port,
+                port = allocatedJavaPort,
                 serverVersion = version,
                 allocatedRamMb = ramMb,
                 workerThreads = cores,
@@ -292,13 +319,13 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
                 pvp = pvp,
                 allowFlight = allowFlight,
                 hardcore = hardcore,
-                bedrockPort = designatedBedrockPort,
+                bedrockPort = allocatedBedrockPort,
                 bedrockCrossplayEnabled = true,
                 lanModeEnabled = true,
                 playitEnabled = true,
-                playitDomain = designatedTunnel,
-                playitPort = designatedBedrockPort,
-                customPort = designatedBedrockPort,
+                playitDomain = "",
+                playitPort = allocatedBedrockPort,
+                customPort = allocatedBedrockPort,
                 status = ServerStatus.STOPPED,
                 createdAt = System.currentTimeMillis()
             )
@@ -308,14 +335,14 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
                 serverId = newId,
                 level = LogLevel.INFO,
                 tag = "pumpkin::provision",
-                message = "Instance [$name] created. Designated tunnel provisioned: $designatedTunnel (Public IP: 147.185.221.16, Port: $designatedBedrockPort)."
+                message = "Server [$name] configured. Local Java port: $allocatedJavaPort | Bedrock port: $allocatedBedrockPort. Tunnel provisioning ready."
             )
 
             // Create default files
             val defaultToml = """
                 # PumpkinMC Server Config for $name (v$version)
                 [server]
-                address = "0.0.0.0:$port"
+                address = "0.0.0.0:$allocatedJavaPort"
                 version = "$version"
                 max_players = ${newConfig.maxPlayers}
                 view_distance = ${newConfig.viewDistance}
@@ -350,6 +377,7 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     fun deleteServer(serverId: String) {
         viewModelScope.launch {
             serverManager.stopServer(serverId)
+            tunnelManager.deleteTunnel(serverId)
             repository.deleteServer(serverId)
             val remaining = servers.value.filter { it.id != serverId }
             _selectedServerId.value = remaining.firstOrNull()?.id

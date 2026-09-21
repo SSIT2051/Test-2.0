@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -80,8 +81,8 @@ fun CreateServerDialog(
         motd: String
     ) -> Unit
 ) {
-    var name by remember { mutableStateOf("New Pumpkin Server") }
-    var portText by remember { mutableStateOf("25567") }
+    var name by remember { mutableStateOf("My Minecraft Server") }
+    var portText by remember { mutableStateOf("25565") }
     var selectedVersion by remember { mutableStateOf("26.3 (Latest 2026 Release)") }
     var versionExpanded by remember { mutableStateOf(false) }
 
@@ -213,6 +214,29 @@ fun CreateServerDialog(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
                         )
+                    )
+                }
+
+                // Port reminder for Bedrock Mobile and Java PC
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(ObsidianSurfaceElevated)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = PumpkinOrange,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Bedrock (Mobile) port: 19132 • Java (PC) port: $portText",
+                        fontSize = 11.sp,
+                        color = TextSecondary
                     )
                 }
 

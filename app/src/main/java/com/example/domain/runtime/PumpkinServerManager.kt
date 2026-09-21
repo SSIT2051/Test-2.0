@@ -25,6 +25,7 @@ class PumpkinServerManager(
     private val serverJobs = ConcurrentHashMap<String, Job>()
     private val networkBridges = ConcurrentHashMap<String, MinecraftNetworkBridge>()
     private val _metricsMap = ConcurrentHashMap<String, MutableStateFlow<LiveServerMetrics>>()
+    private val startingServers = java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
     fun getMetrics(serverId: String): StateFlow<LiveServerMetrics> {
         val flow = _metricsMap.getOrPut(serverId) {
@@ -34,91 +35,107 @@ class PumpkinServerManager(
     }
 
     fun startServer(config: ServerConfig) {
-        // If already running, stop previous instance first to ensure ports are freed
-        serverJobs.remove(config.id)?.cancel()
-        networkBridges.remove(config.id)?.stop()
+        // Prevent concurrent start calls or loops
+        if (serverJobs.containsKey(config.id) || startingServers.contains(config.id)) {
+            return
+        }
+        startingServers.add(config.id)
 
         scope.launch {
-            repository.updateServerStatus(config.id, ServerStatus.STARTING)
-            repository.appendLog(
-                serverId = config.id,
-                level = LogLevel.INFO,
-                tag = "pumpkin::boot",
-                message = "Starting PumpkinMC [${config.name}] (Minecraft ${config.serverVersion.split(" ").first()}) on Java port ${config.port} / Bedrock port ${config.bedrockPort}..."
-            )
-            delay(400)
-
-            repository.appendLog(
-                serverId = config.id,
-                level = LogLevel.INFO,
-                tag = "pumpkin::runtime",
-                message = "Tokio thread pool initialized with ${config.workerThreads} worker threads, rayon parallel chunk tasks active."
-            )
-            delay(400)
-
-            if (config.customTunnelEnabled && config.customTunnelAddress.isNotBlank()) {
-                val effectivePort = if (config.customPort != 0) config.customPort else config.bedrockPort
+            try {
+                repository.updateServerStatus(config.id, ServerStatus.STARTING)
                 repository.appendLog(
                     serverId = config.id,
                     level = LogLevel.INFO,
-                    tag = "pumpkin::tunnel",
-                    message = "Custom Tunnel (${config.customTunnelType}) Active: ${config.customTunnelAddress}:$effectivePort (Forwarding to local ports Bedrock: ${config.bedrockPort} / Java: ${config.port})"
+                    tag = "pumpkin::boot",
+                    message = "Starting PumpkinMC [${config.name}] (Minecraft ${config.serverVersion.split(" ").first()}) on Java port ${config.port} / Bedrock port ${config.bedrockPort}..."
                 )
-            } else if (config.playitEnabled) {
+                delay(300)
+
                 repository.appendLog(
                     serverId = config.id,
                     level = LogLevel.INFO,
-                    tag = "pumpkin::tunnel",
-                    message = "Designated Tunnel Online: ${config.playitDomain} (Public IP: 147.185.221.16 | Bedrock Port: ${config.bedrockPort} | Java Port: ${config.port}). Ready for direct joins!"
+                    tag = "pumpkin::runtime",
+                    message = "Tokio thread pool initialized with ${config.workerThreads} worker threads, rayon parallel chunk tasks active."
                 )
-            }
+                delay(300)
 
-            if (config.lanModeEnabled) {
-                val ip = repository.getLocalDeviceIp()
-                repository.appendLog(
-                    serverId = config.id,
-                    level = LogLevel.INFO,
-                    tag = "pumpkin::lan",
-                    message = "Local LAN broadcast active on $ip (Java: ${config.port}, Bedrock: ${config.bedrockPort})"
-                )
-            }
-
-            if (config.bedrockCrossplayEnabled) {
-                repository.appendLog(
-                    serverId = config.id,
-                    level = LogLevel.INFO,
-                    tag = "geyser::rs",
-                    message = "Bedrock Crossplay active: Built-in protocol translation on UDP port ${config.bedrockPort}."
-                )
-            }
-
-            // Start Real TCP & UDP Mobile Socket Listeners
-            val bridge = MinecraftNetworkBridge { level, tag, message ->
-                scope.launch {
-                    repository.appendLog(config.id, level, tag, message)
+                if (config.customTunnelEnabled && config.customTunnelAddress.isNotBlank()) {
+                    val effectivePort = if (config.customPort != 0) config.customPort else config.bedrockPort
+                    repository.appendLog(
+                        serverId = config.id,
+                        level = LogLevel.INFO,
+                        tag = "pumpkin::tunnel",
+                        message = "Custom Tunnel (${config.customTunnelType}) Active: ${config.customTunnelAddress}:$effectivePort (Forwarding to local ports Bedrock: ${config.bedrockPort} / Java: ${config.port})"
+                    )
+                } else if (config.playitEnabled) {
+                    if (config.playitDomain.isNotBlank()) {
+                        repository.appendLog(
+                            serverId = config.id,
+                            level = LogLevel.INFO,
+                            tag = "pumpkin::tunnel",
+                            message = "Playit.gg Tunnel provisioned: ${config.playitDomain} (Bedrock: ${config.bedrockPort} | Java: ${config.port})"
+                        )
+                    } else {
+                        repository.appendLog(
+                            serverId = config.id,
+                            level = LogLevel.INFO,
+                            tag = "pumpkin::tunnel",
+                            message = "Outbound tunnel session initializing for local ports Bedrock: ${config.bedrockPort} / Java: ${config.port}..."
+                        )
+                    }
                 }
+
+                if (config.lanModeEnabled) {
+                    val ip = repository.getLocalDeviceIp()
+                    repository.appendLog(
+                        serverId = config.id,
+                        level = LogLevel.INFO,
+                        tag = "pumpkin::lan",
+                        message = "Local LAN broadcast active on $ip (Java: ${config.port}, Bedrock: ${config.bedrockPort})"
+                    )
+                }
+
+                if (config.bedrockCrossplayEnabled) {
+                    repository.appendLog(
+                        serverId = config.id,
+                        level = LogLevel.INFO,
+                        tag = "geyser::rs",
+                        message = "Bedrock Crossplay active: Built-in protocol translation on UDP port ${config.bedrockPort}."
+                    )
+                }
+
+                // Start Real TCP & UDP Mobile Socket Listeners
+                val bridge = MinecraftNetworkBridge { level, tag, message ->
+                    scope.launch {
+                        repository.appendLog(config.id, level, tag, message)
+                    }
+                }
+                bridge.start(config, scope)
+                networkBridges[config.id] = bridge
+
+                repository.appendLog(
+                    serverId = config.id,
+                    level = LogLevel.INFO,
+                    tag = "pumpkin::server",
+                    message = "Done! Pumpkin server ready in 0.38s. High-performance event loop started."
+                )
+
+                repository.updateServerStatus(config.id, ServerStatus.RUNNING)
+
+                // Start simulated ticking and telemetry
+                val tickJob = scope.launch {
+                    runServerLoop(config.id, config)
+                }
+                serverJobs[config.id] = tickJob
+            } finally {
+                startingServers.remove(config.id)
             }
-            bridge.start(config, scope)
-            networkBridges[config.id] = bridge
-
-            repository.appendLog(
-                serverId = config.id,
-                level = LogLevel.INFO,
-                tag = "pumpkin::server",
-                message = "Done! Pumpkin server ready in 0.38s. High-performance event loop started."
-            )
-
-            repository.updateServerStatus(config.id, ServerStatus.RUNNING)
-
-            // Start simulated ticking and telemetry
-            val tickJob = scope.launch {
-                runServerLoop(config.id, config)
-            }
-            serverJobs[config.id] = tickJob
         }
     }
 
     fun stopServer(serverId: String) {
+        startingServers.remove(serverId)
         scope.launch {
             repository.updateServerStatus(serverId, ServerStatus.STOPPED)
             repository.appendLog(
@@ -127,7 +144,6 @@ class PumpkinServerManager(
                 tag = "pumpkin::server",
                 message = "Stopping server... saving world chunks to disk and flushing memory."
             )
-            delay(600)
 
             serverJobs.remove(serverId)?.cancel()
             networkBridges.remove(serverId)?.stop()
@@ -143,6 +159,7 @@ class PumpkinServerManager(
                 )
             }
 
+            delay(300)
             repository.appendLog(
                 serverId = serverId,
                 level = LogLevel.INFO,

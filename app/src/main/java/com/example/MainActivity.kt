@@ -14,25 +14,31 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -50,16 +56,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.CreateServerDialog
-import com.example.ui.components.LogoVariant
-import com.example.ui.components.PumpkinLogo
 import com.example.ui.components.ServerSwitcherSheet
 import com.example.ui.components.StatusBadge
 import com.example.ui.screens.ConsoleScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FileManagerScreen
 import com.example.ui.screens.PluginMarketScreen
+import com.example.ui.screens.ServerListScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ObsidianDark
@@ -117,6 +124,7 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showServerSheet by remember { mutableStateOf(false) }
     var showCreateServerDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -141,175 +149,229 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
         ScreenNav.Settings
     )
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { showServerSheet = true }
-                            .padding(vertical = 4.dp, horizontal = 4.dp)
-                    ) {
-                        PumpkinLogo(
-                            size = 28.dp,
-                            showGlow = false,
-                            variant = LogoVariant.COMPACT
-                        )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = activeServer?.name ?: "Pumpkin Host",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
+    // Check if user is in Server List mode or Server Management mode
+    if (selectedServerId == null || activeServer == null) {
+        // Uncluttered, dedicated Server List Screen (entry point)
+        ServerListScreen(
+            servers = servers,
+            localWifiIp = viewModel.localWifiIp,
+            onSelectServer = { serverId ->
+                viewModel.selectServer(serverId)
+                selectedTabIndex = 0
+            },
+            onTogglePower = { server ->
+                viewModel.toggleServerPower(server)
+            },
+            onDeleteServer = { serverId ->
+                viewModel.deleteServer(serverId)
+            },
+            onCreateNewServer = {
+                showCreateServerDialog = true
+            },
+            onOpenAppSettings = {
+                showSettingsDialog = true
+            }
+        )
+    } else {
+        // Dedicated Server Detail Management
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { viewModel.deselectServer() }) {
                             Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "Switch Server",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(20.dp)
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back to Server List",
+                                tint = PumpkinOrange
                             )
                         }
-                    }
-                },
-                actions = {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(ObsidianSurfaceElevated)
-                            .border(1.dp, PumpkinOrange.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                            .clickable { showCreateServerDialog = true }
-                            .padding(horizontal = 8.dp, vertical = 5.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    },
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showServerSheet = true }
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = activeServer?.name ?: "Server",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = "Switch Server",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "Bedrock ${activeServer?.bedrockPort} • Java ${activeServer?.port}",
+                                    fontSize = 10.sp,
+                                    color = TextMuted
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        activeServer?.let { srv ->
+                            Box(modifier = Modifier.padding(end = 6.dp)) {
+                                StatusBadge(status = srv.status)
+                            }
+                        }
+
+                        IconButton(onClick = { showCreateServerDialog = true }) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Create Server",
                                 tint = PumpkinOrange,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "New",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    activeServer?.let { srv ->
-                        Box(modifier = Modifier.padding(end = 12.dp)) {
-                            StatusBadge(status = srv.status)
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = ObsidianDark,
-                    titleContentColor = TextPrimary
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = ObsidianDark,
+                        titleContentColor = TextPrimary
+                    )
                 )
-            )
-        },
-        bottomBar = {
-            if (editingFile == null) {
-                NavigationBar(
-                    containerColor = ObsidianSurface,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.border(1.dp, ObsidianSurfaceBorder)
-                ) {
-                    navItems.forEachIndexed { index, item ->
-                        val isSelected = selectedTabIndex == index
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { selectedTabIndex = index },
-                            icon = {
-                                Icon(
-                                    imageVector = item.icon,
-                                    contentDescription = item.title
+            },
+            bottomBar = {
+                if (editingFile == null) {
+                    NavigationBar(
+                        containerColor = ObsidianSurface,
+                        tonalElevation = 0.dp,
+                        modifier = Modifier.border(1.dp, ObsidianSurfaceBorder)
+                    ) {
+                        navItems.forEachIndexed { index, item ->
+                            val isSelected = selectedTabIndex == index
+                            NavigationBarItem(
+                                selected = isSelected,
+                                onClick = { selectedTabIndex = index },
+                                icon = {
+                                    Icon(
+                                        imageVector = item.icon,
+                                        contentDescription = item.title
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = item.title,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = PumpkinOrange,
+                                    selectedTextColor = PumpkinOrange,
+                                    unselectedIconColor = TextSecondary,
+                                    unselectedTextColor = TextSecondary,
+                                    indicatorColor = ObsidianSurfaceElevated
                                 )
-                            },
-                            label = {
-                                Text(
-                                    text = item.title,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PumpkinOrange,
-                                selectedTextColor = PumpkinOrange,
-                                unselectedIconColor = TextSecondary,
-                                unselectedTextColor = TextSecondary,
-                                indicatorColor = ObsidianSurfaceElevated
                             )
-                        )
+                        }
                     }
                 }
+            },
+            containerColor = ObsidianDark
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                when (selectedTabIndex) {
+                    0 -> DashboardScreen(
+                        server = activeServer,
+                        metrics = metrics,
+                        localWifiIp = viewModel.localWifiIp,
+                        hardwareInfo = hardwareInfo,
+                        onStart = { viewModel.startCurrentServer() },
+                        onStop = { viewModel.stopCurrentServer() },
+                        onRestart = { viewModel.restartCurrentServer() },
+                        onUpdateConfig = { viewModel.updateServerConfig(it) },
+                        onApplyHardwareRecommendation = { viewModel.applyRecommendedSettingsToActiveServer() },
+                        onCreateNewServer = { showCreateServerDialog = true },
+                        onNavigateToConsole = { selectedTabIndex = 1 },
+                        onNavigateToSettings = { selectedTabIndex = 4 }
+                    )
+                    1 -> ConsoleScreen(
+                        server = activeServer,
+                        logs = logs,
+                        onSendCommand = { viewModel.executeCommand(it) },
+                        onClearLogs = { viewModel.clearLogs() }
+                    )
+                    2 -> PluginMarketScreen(
+                        server = activeServer,
+                        plugins = marketPlugins,
+                        selectedCategory = marketCategory,
+                        searchQuery = marketSearchQuery,
+                        isRefreshing = isRefreshingMarket,
+                        onSelectCategory = { viewModel.setMarketCategory(it) },
+                        onSearchQueryChange = { viewModel.setMarketSearchQuery(it) },
+                        onRefresh = { viewModel.refreshMarket() },
+                        onInstallPlugin = { viewModel.installPlugin(it) },
+                        onUninstallPlugin = { viewModel.uninstallPlugin(it) }
+                    )
+                    3 -> FileManagerScreen(
+                        server = activeServer,
+                        files = files,
+                        editingFile = editingFile,
+                        onOpenFile = { viewModel.openFileForEditing(it) },
+                        onCloseEditor = { viewModel.closeFileEditor() },
+                        onSaveFile = { path, content -> viewModel.saveFileContent(path, content) },
+                        onCreateFile = { path, isDir -> viewModel.createNewFile(path, isDir) },
+                        onDeleteFile = { path -> viewModel.deleteFile(path) }
+                    )
+                    4 -> SettingsScreen(
+                        settings = appSettings,
+                        hardwareInfo = hardwareInfo,
+                        onUpdateSettings = { viewModel.updateSettings(it) },
+                        onClearCacheAndLogs = { viewModel.clearAllTemporaryData() },
+                        onForceSyncMarket = { viewModel.refreshMarket() }
+                    )
+                }
             }
-        },
-        containerColor = ObsidianDark
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+        }
+    }
+
+    // App Settings Modal Dialog (Accessible from Server List)
+    if (showSettingsDialog) {
+        Dialog(
+            onDismissRequest = { showSettingsDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            when (selectedTabIndex) {
-                0 -> DashboardScreen(
-                    server = activeServer,
-                    metrics = metrics,
-                    localWifiIp = viewModel.localWifiIp,
-                    hardwareInfo = hardwareInfo,
-                    onStart = { viewModel.startCurrentServer() },
-                    onStop = { viewModel.stopCurrentServer() },
-                    onRestart = { viewModel.restartCurrentServer() },
-                    onUpdateConfig = { viewModel.updateServerConfig(it) },
-                    onApplyHardwareRecommendation = { viewModel.applyRecommendedSettingsToActiveServer() },
-                    onCreateNewServer = { showCreateServerDialog = true },
-                    onNavigateToConsole = { selectedTabIndex = 1 },
-                    onNavigateToSettings = { selectedTabIndex = 4 }
-                )
-                1 -> ConsoleScreen(
-                    server = activeServer,
-                    logs = logs,
-                    onSendCommand = { viewModel.executeCommand(it) },
-                    onClearLogs = { viewModel.clearLogs() }
-                )
-                2 -> PluginMarketScreen(
-                    server = activeServer,
-                    plugins = marketPlugins,
-                    selectedCategory = marketCategory,
-                    searchQuery = marketSearchQuery,
-                    isRefreshing = isRefreshingMarket,
-                    onSelectCategory = { viewModel.setMarketCategory(it) },
-                    onSearchQueryChange = { viewModel.setMarketSearchQuery(it) },
-                    onRefresh = { viewModel.refreshMarket() },
-                    onInstallPlugin = { viewModel.installPlugin(it) },
-                    onUninstallPlugin = { viewModel.uninstallPlugin(it) }
-                )
-                3 -> FileManagerScreen(
-                    server = activeServer,
-                    files = files,
-                    editingFile = editingFile,
-                    onOpenFile = { viewModel.openFileForEditing(it) },
-                    onCloseEditor = { viewModel.closeFileEditor() },
-                    onSaveFile = { path, content -> viewModel.saveFileContent(path, content) },
-                    onCreateFile = { path, isDir -> viewModel.createNewFile(path, isDir) },
-                    onDeleteFile = { path -> viewModel.deleteFile(path) }
-                )
-                4 -> SettingsScreen(
-                    settings = appSettings,
-                    hardwareInfo = hardwareInfo,
-                    onUpdateSettings = { viewModel.updateSettings(it) },
-                    onClearCacheAndLogs = { viewModel.clearAllTemporaryData() },
-                    onForceSyncMarket = { viewModel.refreshMarket() }
-                )
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("App Settings", fontWeight = FontWeight.Bold, color = TextPrimary) },
+                        navigationIcon = {
+                            IconButton(onClick = { showSettingsDialog = false }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = TextPrimary)
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = ObsidianDark)
+                    )
+                },
+                containerColor = ObsidianDark
+            ) { dialogPadding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(dialogPadding)
+                ) {
+                    SettingsScreen(
+                        settings = appSettings,
+                        hardwareInfo = hardwareInfo,
+                        onUpdateSettings = { viewModel.updateSettings(it) },
+                        onClearCacheAndLogs = { viewModel.clearAllTemporaryData() },
+                        onForceSyncMarket = { viewModel.refreshMarket() }
+                    )
+                }
             }
         }
     }

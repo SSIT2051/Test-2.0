@@ -23,6 +23,11 @@ val TextPrimary = Color(0xFFFFFFFF)            // High-contrast primary text
 val TextSecondary = Color(0xFFA1A1AA)          // Subtitles / secondary labels
 val TextMuted = Color(0xFF52525B)              // Muted hints / timestamps
 
+// Status colors
+val StatusGreen = Color(0xFF22C55E)
+val StatusRed = Color(0xFFEF4444)
+val StatusAmber = Color(0xFFF59E0B)
+
 // Clean monochromatic terminal
 val TerminalBackground = Color(0xFF09090B)
 val TerminalText = Color(0xFFE4E4E7)

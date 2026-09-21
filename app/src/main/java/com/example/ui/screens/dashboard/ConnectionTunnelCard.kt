@@ -77,13 +77,19 @@ fun ConnectionTunnelCard(
     var tunnelTestStatus by remember { mutableStateOf<String?>(null) }
     var isTestingTunnel by remember { mutableStateOf(false) }
 
-    val designatedDomain = draftServer.playitDomain.ifBlank { "pumpkin-${draftServer.name.lowercase().take(6)}.gl.joinmc.link" }
     val designatedBedrockPort = draftServer.bedrockPort
     val designatedJavaPort = draftServer.port
     val localAddress = if (localWifiIp.isNotBlank()) localWifiIp else "127.0.0.1"
 
     val isCustom = draftServer.customTunnelEnabled
-    val currentHost = if (isCustom && draftServer.customTunnelAddress.isNotBlank()) draftServer.customTunnelAddress.trim() else designatedDomain
+    val hasRealTunnel = draftServer.playitDomain.isNotBlank() && draftServer.playitDomain.contains(".")
+    val currentHost = if (isCustom && draftServer.customTunnelAddress.isNotBlank()) {
+        draftServer.customTunnelAddress.trim()
+    } else if (hasRealTunnel) {
+        draftServer.playitDomain
+    } else {
+        "$localAddress:$designatedBedrockPort"
+    }
     val currentPort = if (isCustom && draftServer.customPort != 0) draftServer.customPort else designatedBedrockPort
 
     Box(
@@ -171,13 +177,16 @@ fun ConnectionTunnelCard(
             }
 
             if (!isCustom) {
-                // CLEAN AUTO DESIGNATED ADDRESS BOX
+                // RULE 10 ENFORCEMENT: Only show Online if an actual external verified gateway connection is active.
+                // Otherwise honestly show 🔴 NOT CONNECTED.
+                val isTunnelOnline = false // Public tunnel data path is wired in client code but has no active live external gateway host
+                val displayAddress = if (isRunning) "LAN/Wi-Fi: $localAddress:$designatedBedrockPort" else "Server Stopped"
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(ObsidianSurfaceElevated)
-                        .border(1.dp, PumpkinOrange.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                        .border(1.dp, if (isTunnelOnline) Color(0xFF4CAF50).copy(alpha = 0.4f) else ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -188,19 +197,19 @@ fun ConnectionTunnelCard(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(if (isRunning) Color(0xFF4CAF50) else Color(0xFF888888))
+                                    .background(if (isTunnelOnline) Color(0xFF4CAF50) else Color(0xFFE53935))
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isRunning) "Global Tunnel Online" else "Global Tunnel Ready",
+                                text = if (isTunnelOnline) "Public Tunnel: 🟢 ONLINE" else "Public Tunnel: 🔴 NOT CONNECTED",
                                 fontSize = 10.sp,
-                                color = if (isRunning) Color(0xFF4CAF50) else TextMuted,
-                                fontWeight = FontWeight.Medium
+                                color = if (isTunnelOnline) Color(0xFF4CAF50) else Color(0xFFE53935),
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = designatedDomain,
+                            text = displayAddress,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -210,7 +219,7 @@ fun ConnectionTunnelCard(
 
                     IconButton(
                         onClick = {
-                            clipboard.setText(AnnotatedString(designatedDomain))
+                            clipboard.setText(AnnotatedString(displayAddress))
                             Toast.makeText(context, "Address copied!", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(32.dp)
