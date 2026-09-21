@@ -34,7 +34,9 @@ class PumpkinServerManager(
     }
 
     fun startServer(config: ServerConfig) {
-        if (serverJobs.containsKey(config.id)) return
+        // If already running, stop previous instance first to ensure ports are freed
+        serverJobs.remove(config.id)?.cancel()
+        networkBridges.remove(config.id)?.stop()
 
         scope.launch {
             repository.updateServerStatus(config.id, ServerStatus.STARTING)
@@ -42,9 +44,9 @@ class PumpkinServerManager(
                 serverId = config.id,
                 level = LogLevel.INFO,
                 tag = "pumpkin::boot",
-                message = "Starting PumpkinMC [${config.name}] (Minecraft 1.21.4) on port ${config.port}..."
+                message = "Starting PumpkinMC [${config.name}] (Minecraft ${config.serverVersion.split(" ").first()}) on Java port ${config.port} / Bedrock port ${config.bedrockPort}..."
             )
-            delay(800)
+            delay(400)
 
             repository.appendLog(
                 serverId = config.id,

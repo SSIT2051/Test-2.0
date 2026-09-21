@@ -96,9 +96,10 @@ class MinecraftNetworkBridge(
     private suspend fun runJavaTcpListener(config: ServerConfig) {
         val port = config.port
         try {
+            // Must create unbounded ServerSocket before setting reuseAddress to avoid EADDRINUSE on rebind
             javaServerSocket = ServerSocket().apply {
                 reuseAddress = true
-                bind(InetSocketAddress(InetAddress.getByName("0.0.0.0"), port), 50)
+                bind(InetSocketAddress("0.0.0.0", port), 50)
             }
             onLog(
                 LogLevel.INFO,
@@ -109,7 +110,7 @@ class MinecraftNetworkBridge(
             while (javaServerSocket?.isClosed == false) {
                 try {
                     val client = javaServerSocket?.accept() ?: break
-                    client.soTimeout = 4000
+                    client.soTimeout = 5000
                     handleJavaClient(client, config)
                 } catch (e: Exception) {
                     if (javaServerSocket?.isClosed == true) break
