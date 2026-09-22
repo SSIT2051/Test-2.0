@@ -19,6 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -28,6 +31,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -60,12 +64,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
+import android.net.Uri
 
 @Composable
 fun ConnectionTunnelCard(
     draftServer: ServerConfig,
     isRunning: Boolean,
     localWifiIp: String,
+    isClaimLoading: Boolean = false,
+    isAccountLinked: Boolean = false,
+    onRequestClaim: ((String) -> Unit) -> Unit = {},
+    onUnlinkAccount: () -> Unit = {},
+    onRetryTunnel: () -> Unit = {},
     onServerChange: (ServerConfig) -> Unit,
     onOpenManual: () -> Unit,
     modifier: Modifier = Modifier
@@ -177,54 +187,191 @@ fun ConnectionTunnelCard(
             }
 
             if (!isCustom) {
-                // RULE 10 ENFORCEMENT: Only show Online if an actual external verified gateway connection is active.
-                // Otherwise honestly show 🔴 NOT CONNECTED.
-                val isTunnelOnline = false // Public tunnel data path is wired in client code but has no active live external gateway host
-                val displayAddress = if (isRunning) "LAN/Wi-Fi: $localAddress:$designatedBedrockPort" else "Server Stopped"
-                Row(
+                // AUTO DESIGNATED ADDRESS BOX (Clear Wi-Fi LAN direct IP & Public Playit Tunnel Status)
+                val isTunnelOnline = draftServer.playitDomain.isNotBlank() && draftServer.playitDomain.contains(".")
+                val localLanDisplay = if (isRunning) "$localAddress:$designatedBedrockPort" else "Server Stopped"
+                val localJavaDisplay = if (isRunning) "$localAddress:$designatedJavaPort" else "Server Stopped"
+                val publicTunnelDisplay = if (isTunnelOnline) draftServer.playitDomain else "Tunnel Claim / Account Required (or use Local Wi-Fi)"
+
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(ObsidianSurfaceElevated)
-                        .border(1.dp, if (isTunnelOnline) Color(0xFF4CAF50).copy(alpha = 0.4f) else ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .border(1.dp, if (isRunning) Color(0xFF4CAF50).copy(alpha = 0.35f) else ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(if (isTunnelOnline) Color(0xFF4CAF50) else Color(0xFFE53935))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                    // 1. Direct Local Wi-Fi Row (Always works for phones & PCs on the same Wi-Fi)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(if (isRunning) Color(0xFF4CAF50) else Color(0xFF888888))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isRunning) "Local Wi-Fi LAN: 🟢 READY FOR DIRECT JOIN" else "Local Wi-Fi: ⚪ SERVER STOPPED",
+                                    fontSize = 10.sp,
+                                    color = if (isRunning) Color(0xFF4CAF50) else TextMuted,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isTunnelOnline) "Public Tunnel: 🟢 ONLINE" else "Public Tunnel: 🔴 NOT CONNECTED",
-                                fontSize = 10.sp,
-                                color = if (isTunnelOnline) Color(0xFF4CAF50) else Color(0xFFE53935),
-                                fontWeight = FontWeight.SemiBold
+                                text = "Bedrock: $localLanDisplay",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Java: $localJavaDisplay",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextSecondary
                             )
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = displayAddress,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = TextPrimary
-                        )
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(localLanDisplay))
+                                    Toast.makeText(context, "Bedrock address copied: $localLanDisplay", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Bedrock Address", tint = PumpkinOrange, modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(localJavaDisplay))
+                                    Toast.makeText(context, "Java address copied: $localJavaDisplay", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Java Address", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
 
-                    IconButton(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(displayAddress))
-                            Toast.makeText(context, "Address copied!", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(32.dp)
+                    // Divider
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(ObsidianSurfaceBorder))
+
+                    // 2. Playit.gg Public Internet Tunnel Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Address", tint = PumpkinOrange, modifier = Modifier.size(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(if (isTunnelOnline) Color(0xFF4CAF50) else if (isAccountLinked) Color(0xFF29B6F6) else Color(0xFFFFA000))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isTunnelOnline) {
+                                        "Public Playit Tunnel: 🟢 ONLINE"
+                                    } else if (isAccountLinked) {
+                                        "Playit Account: 🔵 LINKED (Ready to allocate)"
+                                    } else {
+                                        "Public Playit Tunnel: 🟡 CLAIM REQUIRED"
+                                    },
+                                    fontSize = 10.sp,
+                                    color = if (isTunnelOnline) Color(0xFF4CAF50) else if (isAccountLinked) Color(0xFF29B6F6) else Color(0xFFFFA000),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = publicTunnelDisplay,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (isTunnelOnline) TextPrimary else TextSecondary
+                            )
+                        }
+
+                        if (isTunnelOnline) {
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(publicTunnelDisplay))
+                                    Toast.makeText(context, "Public tunnel address copied!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Public Address", tint = PumpkinOrange, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    // 3. Playit Account & Claim Action Controls
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (!isAccountLinked) {
+                            Button(
+                                onClick = {
+                                    onRequestClaim { claimUrl ->
+                                        try {
+                                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(claimUrl))
+                                            context.startActivity(browserIntent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Error opening browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                enabled = !isClaimLoading,
+                                colors = ButtonDefaults.buttonColors(containerColor = PumpkinOrange, contentColor = Color.Black),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f).height(34.dp)
+                            ) {
+                                if (isClaimLoading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = Color.Black)
+                                } else {
+                                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text("Claim Account on Playit.gg", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = { onRetryTunnel() },
+                                colors = ButtonDefaults.buttonColors(containerColor = ObsidianSurfaceElevated, contentColor = TextPrimary),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f).height(34.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = PumpkinOrange, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Sync / Reconnect Tunnel", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    onUnlinkAccount()
+                                    Toast.makeText(context, "Playit account unlinked.", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Unlink", fontSize = 10.sp)
+                            }
+                        }
                     }
                 }
             } else {

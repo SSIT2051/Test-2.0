@@ -159,6 +159,9 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     fun toggleServerPower(server: ServerConfig) {
         if (server.status == ServerStatus.RUNNING) {
             serverManager.stopServer(server.id)
+            viewModelScope.launch {
+                tunnelManager.stopTunnel(server.id)
+            }
             PumpkinServerService.stop(getApplication())
         } else if (server.status == ServerStatus.STOPPED) {
             serverManager.startServer(server)
@@ -168,6 +171,17 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
                 bedrockPort = server.bedrockPort,
                 javaPort = server.port
             )
+            if (server.playitEnabled) {
+                viewModelScope.launch {
+                    val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
+                    if (tunnel.publicHost.isNotBlank()) {
+                        updateServerConfig(server.copy(
+                            playitDomain = tunnel.displayEndpoint,
+                            playitPort = tunnel.publicPort
+                        ))
+                    }
+                }
+            }
         }
     }
 
@@ -206,7 +220,7 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
         // Launch real tunnel provisioning asynchronously
         if (server.playitEnabled) {
             viewModelScope.launch {
-                val tunnel = tunnelManager.createAndStartTunnel(server, "gateway")
+                val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
                 if (tunnel.publicHost.isNotBlank()) {
                     updateServerConfig(server.copy(
                         playitDomain = tunnel.displayEndpoint,
@@ -237,7 +251,7 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
         )
         if (server.playitEnabled) {
             viewModelScope.launch {
-                val tunnel = tunnelManager.createAndStartTunnel(server, "gateway")
+                val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
                 if (tunnel.publicHost.isNotBlank()) {
                     updateServerConfig(server.copy(
                         playitDomain = tunnel.displayEndpoint,
@@ -450,6 +464,65 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
         val server = activeServer.value ?: return
         viewModelScope.launch {
             repository.uninstallPlugin(server.id, pluginName)
+        }
+    }
+
+    // Tunnel & Claim Account Management
+    private val _claimUrl = MutableStateFlow<String?>(null)
+    val claimUrl: StateFlow<String?> = _claimUrl.asStateFlow()
+
+    private val _isClaimLoading = MutableStateFlow(false)
+    val isClaimLoading: StateFlow<Boolean> = _isClaimLoading.asStateFlow()
+
+    private val _playitAccountLinked = MutableStateFlow(false)
+    val playitAccountLinked: StateFlow<Boolean> = _playitAccountLinked.asStateFlow()
+
+    init {
+        checkPlayitAccountStatus()
+    }
+
+    fun checkPlayitAccountStatus() {
+        viewModelScope.launch {
+            val key = tunnelManager.getPlayitSecretKey()
+            _playitAccountLinked.value = key.isNotBlank()
+        }
+    }
+
+    fun requestPlayitClaim(onClaimReady: (String) -> Unit) {
+        viewModelScope.launch {
+            _isClaimLoading.value = true
+            val url = tunnelManager.getPlayitClaimUrl()
+            _isClaimLoading.value = false
+            _claimUrl.value = url
+            checkPlayitAccountStatus()
+            if (!url.isNullOrBlank()) {
+                onClaimReady(url)
+            }
+        }
+    }
+
+    fun unlinkPlayitAccount() {
+        viewModelScope.launch {
+            tunnelManager.clearPlayitAccount()
+            _playitAccountLinked.value = false
+            _claimUrl.value = null
+            val server = activeServer.value
+            if (server != null) {
+                updateServerConfig(server.copy(playitDomain = ""))
+            }
+        }
+    }
+
+    fun retryProvisionTunnel() {
+        val server = activeServer.value ?: return
+        viewModelScope.launch {
+            val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
+            if (tunnel.publicHost.isNotBlank()) {
+                updateServerConfig(server.copy(
+                    playitDomain = tunnel.displayEndpoint,
+                    playitPort = tunnel.publicPort
+                ))
+            }
         }
     }
 }

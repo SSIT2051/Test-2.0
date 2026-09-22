@@ -67,6 +67,11 @@ fun DashboardScreen(
     server: ServerConfig?,
     metrics: LiveServerMetrics,
     localWifiIp: String,
+    isClaimLoading: Boolean = false,
+    isAccountLinked: Boolean = false,
+    onRequestClaim: ((String) -> Unit) -> Unit = {},
+    onUnlinkAccount: () -> Unit = {},
+    onRetryTunnel: () -> Unit = {},
     hardwareInfo: DeviceHardwareInfo? = null,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -193,6 +198,11 @@ fun DashboardScreen(
                 draftServer = draftServer,
                 isRunning = isRunning,
                 localWifiIp = localWifiIp,
+                isClaimLoading = isClaimLoading,
+                isAccountLinked = isAccountLinked,
+                onRequestClaim = onRequestClaim,
+                onUnlinkAccount = onUnlinkAccount,
+                onRetryTunnel = onRetryTunnel,
                 onServerChange = { draftServer = it },
                 onOpenManual = { showUserGuide = true }
             )

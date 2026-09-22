@@ -589,17 +589,17 @@ private fun ServerCardItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(6.dp))
-                        .background(ObsidianSurfaceElevated)
+                        .background(StatusGreen.copy(alpha = 0.12f))
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Local Socket: 127.0.0.1:${server.bedrockPort} (Public Tunnel: Not Connected)",
+                        text = if (server.playitDomain.isNotBlank()) "Public: ${server.playitDomain}" else "Wi-Fi LAN Direct Join (Bedrock: ${server.bedrockPort} | Java: ${server.port})",
                         fontSize = 11.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold,
-                        color = PumpkinOrange
+                        color = StatusGreen
                     )
                 }
             }

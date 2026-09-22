@@ -261,10 +261,11 @@ class MinecraftNetworkBridge(
                                 val clientTime = ByteBuffer.wrap(data, 1, 8).long
                                 val serverGuid = 0x0000000000000002L
 
-                                // MCPE Server Advertisement String
+                                // MCPE Server Advertisement String (Minecraft 1.21.x - 1.26.x NetherNet protocol compatibility)
                                 val motd = config.name.replace(";", "")
-                                val subMotd = "PumpkinMC Rust Native"
-                                val pongString = "MCPE;§6$motd§r;766;1.21.40;0;${config.maxPlayers};$serverGuid;$subMotd;Survival;1;$bedrockPort;$bedrockPort;"
+                                val subMotd = "PumpkinMC Server"
+                                // Protocol 766 (1.21.40+) / 770+ (1.26+)
+                                val pongString = "MCPE;§6$motd§r;770;1.26.51;0;${config.maxPlayers};$serverGuid;$subMotd;Survival;1;$bedrockPort;$bedrockPort;"
                                 val pongBytes = pongString.toByteArray(StandardCharsets.UTF_8)
 
                                 val responseBuffer = ByteBuffer.allocate(1 + 8 + 8 + 16 + 2 + pongBytes.size)
@@ -317,6 +318,25 @@ class MinecraftNetworkBridge(
                                 val replyPacket = DatagramPacket(replyData, replyData.size, packet.address, packet.port)
                                 bedrockDatagramSocket?.send(replyPacket)
                                 onLog(LogLevel.INFO, "geyser::bedrock", "Bedrock client connected successfully from ${packet.address.hostAddress}:${packet.port}")
+                            }
+                        } else if (packetId in 0x80..0x8f) {
+                            // RakNet Frame Set Packet - Acknowledge receipt (ACK = 0xC0) so Bedrock NetherNet doesn't drop with InitialConnection-13
+                            if (length >= 4) {
+                                val seqNumber = (data[1].toInt() and 0xFF) or
+                                    ((data[2].toInt() and 0xFF) shl 8) or
+                                    ((data[3].toInt() and 0xFF) shl 16)
+
+                                val ackBuf = ByteBuffer.allocate(10)
+                                ackBuf.put(0xc0.toByte()) // ACK
+                                ackBuf.putShort(1.toShort()) // count = 1
+                                ackBuf.put(1.toByte()) // single sequence number (no range)
+                                ackBuf.put((seqNumber and 0xFF).toByte())
+                                ackBuf.put(((seqNumber shr 8) and 0xFF).toByte())
+                                ackBuf.put(((seqNumber shr 16) and 0xFF).toByte())
+
+                                val ackData = ackBuf.array().copyOf(ackBuf.position())
+                                val ackPacket = DatagramPacket(ackData, ackData.size, packet.address, packet.port)
+                                bedrockDatagramSocket?.send(ackPacket)
                             }
                         }
                     }

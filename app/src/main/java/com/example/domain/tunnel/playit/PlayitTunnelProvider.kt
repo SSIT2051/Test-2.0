@@ -1,6 +1,7 @@
 package com.example.domain.tunnel.playit
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.example.domain.tunnel.TunnelConfig
 import com.example.domain.tunnel.TunnelProtocol
@@ -22,6 +23,7 @@ class PlayitTunnelProvider : TunnelProvider {
     override val displayName: String = "Playit.gg Network"
 
     private val activeSessions = ConcurrentHashMap<String, PlayitAgentClient>()
+    private var prefs: SharedPreferences? = null
 
     private val api: PlayitApiService by lazy {
         val client = OkHttpClient.Builder()
@@ -41,7 +43,38 @@ class PlayitTunnelProvider : TunnelProvider {
     }
 
     override suspend fun initialize(context: Context): Boolean = withContext(Dispatchers.IO) {
+        prefs = context.getSharedPreferences("pumpkin_playit_prefs", Context.MODE_PRIVATE)
         true
+    }
+
+    fun getSavedSecretKey(): String {
+        return prefs?.getString("playit_secret_key", "") ?: ""
+    }
+
+    fun saveSecretKey(key: String) {
+        prefs?.edit()?.putString("playit_secret_key", key)?.apply()
+    }
+
+    fun clearSecretKey() {
+        prefs?.edit()?.remove("playit_secret_key")?.apply()
+    }
+
+    suspend fun getClaimSetup(): PlayitClaimSetupData? = withContext(Dispatchers.IO) {
+        try {
+            val resp = api.setupClaim(PlayitClaimSetupRequest())
+            if (resp.isSuccessful && resp.body()?.status == "success") {
+                val data = resp.body()?.data
+                if (data?.secretKey != null && data.secretKey.isNotBlank()) {
+                    saveSecretKey(data.secretKey)
+                }
+                data
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("PlayitTunnelProvider", "setupClaim error: ${e.message}", e)
+            null
+        }
     }
 
     override suspend fun createTunnel(
@@ -60,10 +93,19 @@ class PlayitTunnelProvider : TunnelProvider {
         }
 
         try {
-            // First initialize claim to get agent session token
-            val claimResp = api.setupClaim(PlayitClaimSetupRequest())
-            val claimData = claimResp.body()?.data
-            val secretKey = claimData?.secretKey ?: ""
+            // First check if an account secret key is already linked/saved
+            var secretKey = getSavedSecretKey()
+
+            if (secretKey.isBlank()) {
+                // Initialize claim to get agent session token
+                val claimResp = api.setupClaim(PlayitClaimSetupRequest())
+                val claimData = claimResp.body()?.data
+                val newSecret = claimData?.secretKey ?: ""
+                if (newSecret.isNotBlank()) {
+                    secretKey = newSecret
+                    saveSecretKey(newSecret)
+                }
+            }
 
             if (secretKey.isNotBlank()) {
                 val createResp = api.createTunnel(
@@ -95,10 +137,8 @@ class PlayitTunnelProvider : TunnelProvider {
                 }
             }
 
-            // If public playit API call fails or requires interactive web claim, return a structured Failure
-            // so PumpkinHost never invents or pretends an address is ready.
             TunnelResult.Failure(
-                errorMessage = "Playit API endpoint provisioning failed. Claim setup returned no valid tunnel allocation."
+                errorMessage = "Playit API endpoint provisioning failed. Claim setup or account linking required."
             )
         } catch (e: Exception) {
             Log.e("PlayitTunnelProvider", "Error creating tunnel: ${e.message}", e)
@@ -111,9 +151,18 @@ class PlayitTunnelProvider : TunnelProvider {
     override suspend fun deleteTunnel(providerTunnelId: String): Boolean = withContext(Dispatchers.IO) {
         stopTunnelSession(providerTunnelId)
         try {
-            // Best effort deletion via API
-            true
+            val secretKey = getSavedSecretKey()
+            if (secretKey.isNotBlank() && providerTunnelId.isNotBlank()) {
+                val resp = api.deleteTunnel(
+                    authHeader = "Bearer $secretKey",
+                    request = PlayitDeleteTunnelRequest(tunnelId = providerTunnelId)
+                )
+                resp.isSuccessful
+            } else {
+                true
+            }
         } catch (e: Exception) {
+            Log.e("PlayitTunnelProvider", "Error deleting tunnel from Playit: ${e.message}", e)
             false
         }
     }

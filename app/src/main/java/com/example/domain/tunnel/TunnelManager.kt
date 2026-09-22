@@ -22,10 +22,33 @@ class TunnelManager(
 ) {
     private val providers = ConcurrentHashMap<String, TunnelProvider>()
 
+    private val playitProvider = PlayitTunnelProvider()
+
     init {
         // Register supported providers
         registerProvider(com.example.domain.tunnel.gateway.GatewayTunnelProvider())
-        registerProvider(PlayitTunnelProvider())
+        registerProvider(playitProvider)
+    }
+
+    suspend fun getPlayitClaimUrl(): String? {
+        playitProvider.initialize(context)
+        val claim = playitProvider.getClaimSetup()
+        return claim?.claimUrl
+    }
+
+    suspend fun getPlayitSecretKey(): String {
+        playitProvider.initialize(context)
+        return playitProvider.getSavedSecretKey()
+    }
+
+    suspend fun savePlayitSecretKey(key: String) {
+        playitProvider.initialize(context)
+        playitProvider.saveSecretKey(key)
+    }
+
+    suspend fun clearPlayitAccount() {
+        playitProvider.initialize(context)
+        playitProvider.clearSecretKey()
     }
 
     fun registerProvider(provider: TunnelProvider) {

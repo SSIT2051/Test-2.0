@@ -119,6 +119,8 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
     val isRefreshingMarket by viewModel.isRefreshingMarket.collectAsStateWithLifecycle()
     val appSettings by viewModel.settings.collectAsStateWithLifecycle()
     val hardwareInfo by viewModel.deviceHardwareInfo.collectAsStateWithLifecycle()
+    val isClaimLoading by viewModel.isClaimLoading.collectAsStateWithLifecycle()
+    val isAccountLinked by viewModel.playitAccountLinked.collectAsStateWithLifecycle()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -289,6 +291,11 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
                         server = activeServer,
                         metrics = metrics,
                         localWifiIp = viewModel.localWifiIp,
+                        isClaimLoading = isClaimLoading,
+                        isAccountLinked = isAccountLinked,
+                        onRequestClaim = { onReady -> viewModel.requestPlayitClaim(onReady) },
+                        onUnlinkAccount = { viewModel.unlinkPlayitAccount() },
+                        onRetryTunnel = { viewModel.retryProvisionTunnel() },
                         hardwareInfo = hardwareInfo,
                         onStart = { viewModel.startCurrentServer() },
                         onStop = { viewModel.stopCurrentServer() },
