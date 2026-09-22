@@ -5,22 +5,19 @@ import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
 data class PlayitClaimSetupRequest(
-    @Json(name = "agent_type") val agentType: String = "self-managed",
-    @Json(name = "version") val version: String = "0.15.26"
-)
-
-@JsonClass(generateAdapter = true)
-data class PlayitClaimSetupResponse(
-    @Json(name = "status") val status: String,
-    @Json(name = "data") val data: PlayitClaimSetupData? = null,
-    @Json(name = "error") val error: String? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class PlayitClaimSetupData(
     @Json(name = "code") val code: String,
-    @Json(name = "secret_key") val secretKey: String? = null,
-    @Json(name = "claim_url") val claimUrl: String? = null
+    @Json(name = "agent_type") val agentType: String = "self-managed",
+    @Json(name = "version") val version: String = "playit 0.15.26"
+)
+
+@JsonClass(generateAdapter = true)
+data class PlayitClaimExchangeRequest(
+    @Json(name = "code") val code: String
+)
+
+data class PlayitClaimInfo(
+    val code: String,
+    val claimUrl: String
 )
 
 @JsonClass(generateAdapter = true)

@@ -59,20 +59,54 @@ class PlayitTunnelProvider : TunnelProvider {
         prefs?.edit()?.remove("playit_secret_key")?.apply()
     }
 
-    suspend fun getClaimSetup(): PlayitClaimSetupData? = withContext(Dispatchers.IO) {
+    fun generateClaimCode(): String {
+        val bytes = ByteArray(5)
+        java.security.SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    suspend fun startClaimFlow(): PlayitClaimInfo? = withContext(Dispatchers.IO) {
         try {
-            val resp = api.setupClaim(PlayitClaimSetupRequest())
-            if (resp.isSuccessful && resp.body()?.status == "success") {
-                val data = resp.body()?.data
-                if (data?.secretKey != null && data.secretKey.isNotBlank()) {
-                    saveSecretKey(data.secretKey)
+            val code = generateClaimCode()
+            val request = PlayitClaimSetupRequest(
+                code = code,
+                agentType = "self-managed",
+                version = "playit 0.15.26"
+            )
+            val resp = api.setupClaim(request)
+            val bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+            if (bodyStr.isNotBlank()) {
+                val json = org.json.JSONObject(bodyStr)
+                if (json.optString("status") == "success") {
+                    val claimUrl = "https://playit.gg/claim/$code"
+                    return@withContext PlayitClaimInfo(code = code, claimUrl = claimUrl)
                 }
-                data
-            } else {
-                null
             }
+            null
         } catch (e: Exception) {
-            Log.e("PlayitTunnelProvider", "setupClaim error: ${e.message}", e)
+            Log.e("PlayitTunnelProvider", "startClaimFlow error: ${e.message}", e)
+            null
+        }
+    }
+
+    suspend fun checkClaimExchange(code: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val resp = api.exchangeClaim(PlayitClaimExchangeRequest(code = code))
+            val bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+            if (bodyStr.isNotBlank()) {
+                val json = org.json.JSONObject(bodyStr)
+                if (json.optString("status") == "success") {
+                    val dataObj = json.optJSONObject("data")
+                    val secretKey = dataObj?.optString("secret_key")
+                    if (!secretKey.isNullOrBlank()) {
+                        saveSecretKey(secretKey)
+                        return@withContext secretKey
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Log.e("PlayitTunnelProvider", "checkClaimExchange error: ${e.message}", e)
             null
         }
     }
@@ -93,52 +127,44 @@ class PlayitTunnelProvider : TunnelProvider {
         }
 
         try {
-            // First check if an account secret key is already linked/saved
-            var secretKey = getSavedSecretKey()
-
+            val secretKey = getSavedSecretKey()
             if (secretKey.isBlank()) {
-                // Initialize claim to get agent session token
-                val claimResp = api.setupClaim(PlayitClaimSetupRequest())
-                val claimData = claimResp.body()?.data
-                val newSecret = claimData?.secretKey ?: ""
-                if (newSecret.isNotBlank()) {
-                    secretKey = newSecret
-                    saveSecretKey(newSecret)
-                }
+                return@withContext TunnelResult.Failure(
+                    errorMessage = "Playit account not linked. Please tap 'Claim Account' to link your playit.gg account."
+                )
             }
 
-            if (secretKey.isNotBlank()) {
-                val createResp = api.createTunnel(
-                    authHeader = "Bearer $secretKey",
-                    request = PlayitCreateTunnelRequest(
-                        name = serverName.take(30),
-                        tunnelType = tunnelType,
-                        portType = portType,
-                        portCount = 1,
-                        localIp = "127.0.0.1",
-                        localPort = localPort
-                    )
+            val authHeader = if (secretKey.startsWith("Agent-Key ")) secretKey else "Agent-Key $secretKey"
+            val createResp = api.createTunnel(
+                authHeader = authHeader,
+                request = PlayitCreateTunnelRequest(
+                    name = serverName.take(30),
+                    tunnelType = tunnelType,
+                    portType = portType,
+                    portCount = 1,
+                    localIp = "127.0.0.1",
+                    localPort = localPort
                 )
+            )
 
-                if (createResp.isSuccessful && createResp.body()?.status == "success") {
-                    val tunnelData = createResp.body()?.data
-                    if (tunnelData != null) {
-                        val pubHost = tunnelData.assignedDomain ?: tunnelData.ipHostname ?: ""
-                        val pubPort = tunnelData.port ?: tunnelData.portFrom ?: 0
-                        if (pubHost.isNotBlank() && pubPort > 0) {
-                            return@withContext TunnelResult.Success(
-                                providerTunnelId = tunnelData.id,
-                                publicHost = pubHost,
-                                publicPort = pubPort,
-                                protocol = protocol
-                            )
-                        }
+            if (createResp.isSuccessful && createResp.body()?.status == "success") {
+                val tunnelData = createResp.body()?.data
+                if (tunnelData != null) {
+                    val pubHost = tunnelData.assignedDomain ?: tunnelData.ipHostname ?: ""
+                    val pubPort = tunnelData.port ?: tunnelData.portFrom ?: 0
+                    if (pubHost.isNotBlank() && pubPort > 0) {
+                        return@withContext TunnelResult.Success(
+                            providerTunnelId = tunnelData.id,
+                            publicHost = pubHost,
+                            publicPort = pubPort,
+                            protocol = protocol
+                        )
                     }
                 }
             }
 
             TunnelResult.Failure(
-                errorMessage = "Playit API endpoint provisioning failed. Claim setup or account linking required."
+                errorMessage = "Playit API tunnel allocation failed. Ensure your agent is active."
             )
         } catch (e: Exception) {
             Log.e("PlayitTunnelProvider", "Error creating tunnel: ${e.message}", e)
@@ -153,8 +179,9 @@ class PlayitTunnelProvider : TunnelProvider {
         try {
             val secretKey = getSavedSecretKey()
             if (secretKey.isNotBlank() && providerTunnelId.isNotBlank()) {
+                val authHeader = if (secretKey.startsWith("Agent-Key ")) secretKey else "Agent-Key $secretKey"
                 val resp = api.deleteTunnel(
-                    authHeader = "Bearer $secretKey",
+                    authHeader = authHeader,
                     request = PlayitDeleteTunnelRequest(tunnelId = providerTunnelId)
                 )
                 resp.isSuccessful

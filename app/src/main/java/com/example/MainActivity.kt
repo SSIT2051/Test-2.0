@@ -43,6 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import com.example.ui.components.PlayitClaimDialog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -121,6 +122,7 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
     val hardwareInfo by viewModel.deviceHardwareInfo.collectAsStateWithLifecycle()
     val isClaimLoading by viewModel.isClaimLoading.collectAsStateWithLifecycle()
     val isAccountLinked by viewModel.playitAccountLinked.collectAsStateWithLifecycle()
+    val claimUiState by viewModel.claimUiState.collectAsStateWithLifecycle()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -426,6 +428,16 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
                 )
                 showCreateServerDialog = false
             }
+        )
+    }
+
+    // Playit Claim & Account Linking Dialog
+    if (claimUiState.isOpen) {
+        PlayitClaimDialog(
+            state = claimUiState,
+            onDismiss = { viewModel.dismissPlayitClaimDialog() },
+            onRetry = { viewModel.openPlayitClaim() },
+            onSaveManualKey = { key -> viewModel.saveManualSecretKey(key) }
         )
     }
 }

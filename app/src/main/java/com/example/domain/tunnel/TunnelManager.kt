@@ -30,9 +30,19 @@ class TunnelManager(
         registerProvider(playitProvider)
     }
 
+    suspend fun startPlayitClaim(): com.example.domain.tunnel.playit.PlayitClaimInfo? {
+        playitProvider.initialize(context)
+        return playitProvider.startClaimFlow()
+    }
+
+    suspend fun checkPlayitClaimExchange(code: String): String? {
+        playitProvider.initialize(context)
+        return playitProvider.checkClaimExchange(code)
+    }
+
     suspend fun getPlayitClaimUrl(): String? {
         playitProvider.initialize(context)
-        val claim = playitProvider.getClaimSetup()
+        val claim = playitProvider.startClaimFlow()
         return claim?.claimUrl
     }
 

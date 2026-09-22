@@ -27,6 +27,19 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+
+data class PlayitClaimUiState(
+    val isOpen: Boolean = false,
+    val isLoading: Boolean = false,
+    val code: String = "",
+    val claimUrl: String = "",
+    val isPolling: Boolean = false,
+    val isLinked: Boolean = false,
+    val errorMessage: String? = null
+)
 
 class PumpkinViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
@@ -468,6 +481,9 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Tunnel & Claim Account Management
+    private val _claimUiState = MutableStateFlow(PlayitClaimUiState())
+    val claimUiState: StateFlow<PlayitClaimUiState> = _claimUiState.asStateFlow()
+
     private val _claimUrl = MutableStateFlow<String?>(null)
     val claimUrl: StateFlow<String?> = _claimUrl.asStateFlow()
 
@@ -476,6 +492,8 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
 
     private val _playitAccountLinked = MutableStateFlow(false)
     val playitAccountLinked: StateFlow<Boolean> = _playitAccountLinked.asStateFlow()
+
+    private var claimPollingJob: Job? = null
 
     init {
         checkPlayitAccountStatus()
@@ -488,17 +506,81 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun requestPlayitClaim(onClaimReady: (String) -> Unit) {
+    fun openPlayitClaim(onBrowserLaunch: ((String) -> Unit)? = null) {
         viewModelScope.launch {
             _isClaimLoading.value = true
-            val url = tunnelManager.getPlayitClaimUrl()
+            _claimUiState.value = PlayitClaimUiState(isOpen = true, isLoading = true)
+
+            val claimInfo = tunnelManager.startPlayitClaim()
             _isClaimLoading.value = false
-            _claimUrl.value = url
-            checkPlayitAccountStatus()
-            if (!url.isNullOrBlank()) {
-                onClaimReady(url)
+
+            if (claimInfo != null) {
+                _claimUrl.value = claimInfo.claimUrl
+                _claimUiState.value = PlayitClaimUiState(
+                    isOpen = true,
+                    isLoading = false,
+                    code = claimInfo.code,
+                    claimUrl = claimInfo.claimUrl,
+                    isPolling = true,
+                    isLinked = false
+                )
+                // Attempt direct external browser launch if requested
+                onBrowserLaunch?.invoke(claimInfo.claimUrl)
+
+                // Start polling for approval in background
+                startPollingClaimExchange(claimInfo.code)
+            } else {
+                _claimUiState.value = PlayitClaimUiState(
+                    isOpen = true,
+                    isLoading = false,
+                    errorMessage = "Unable to connect to Playit.gg API. Please check your internet connection or enter an Agent Secret Key manually below."
+                )
             }
         }
+    }
+
+    private fun startPollingClaimExchange(code: String) {
+        claimPollingJob?.cancel()
+        claimPollingJob = viewModelScope.launch {
+            // Poll for up to 5 minutes (120 attempts x 2.5s)
+            for (attempt in 1..120) {
+                delay(2500)
+                if (!isActive) break
+                val secretKey = tunnelManager.checkPlayitClaimExchange(code)
+                if (!secretKey.isNullOrBlank()) {
+                    _claimUiState.value = _claimUiState.value.copy(
+                        isPolling = false,
+                        isLinked = true
+                    )
+                    _playitAccountLinked.value = true
+                    retryProvisionTunnel()
+                    break
+                }
+            }
+        }
+    }
+
+    fun dismissPlayitClaimDialog() {
+        claimPollingJob?.cancel()
+        _claimUiState.value = PlayitClaimUiState(isOpen = false)
+    }
+
+    fun saveManualSecretKey(key: String) {
+        val trimmed = key.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            tunnelManager.savePlayitSecretKey(trimmed)
+            _playitAccountLinked.value = true
+            _claimUiState.value = _claimUiState.value.copy(
+                isLinked = true,
+                isPolling = false
+            )
+            retryProvisionTunnel()
+        }
+    }
+
+    fun requestPlayitClaim(onClaimReady: (String) -> Unit) {
+        openPlayitClaim(onBrowserLaunch = onClaimReady)
     }
 
     fun unlinkPlayitAccount() {

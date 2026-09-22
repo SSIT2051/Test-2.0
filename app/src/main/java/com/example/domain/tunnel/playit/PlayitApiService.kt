@@ -1,5 +1,6 @@
 package com.example.domain.tunnel.playit
 
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.Header
@@ -9,7 +10,12 @@ interface PlayitApiService {
     @POST("claim/setup")
     suspend fun setupClaim(
         @Body request: PlayitClaimSetupRequest
-    ): Response<PlayitClaimSetupResponse>
+    ): Response<ResponseBody>
+
+    @POST("claim/exchange")
+    suspend fun exchangeClaim(
+        @Body request: PlayitClaimExchangeRequest
+    ): Response<ResponseBody>
 
     @POST("tunnels/create")
     suspend fun createTunnel(
