@@ -567,13 +567,13 @@ fun PlayitClaimDialog(
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column {
                                             Text(
-                                                text = "Waiting for your approval on Playit.gg...",
+                                                text = state.statusMessage ?: "Agent connected! Waiting for your approval...",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = TextPrimary
                                             )
                                             Text(
-                                                text = "Once you log in and confirm, this app will automatically sync!",
+                                                text = "Heartbeat active. The Playit page will unlock the 'Add Agent' button.",
                                                 fontSize = 10.sp,
                                                 color = TextMuted
                                             )
@@ -738,7 +738,7 @@ fun PlayitClaimDialog(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = "Listening for authorization... Will automatically complete setup upon claim.",
+                                            text = state.statusMessage ?: "Listening for authorization... Tap 'Add Agent' above.",
                                             fontSize = 11.sp,
                                             color = TextSecondary
                                         )

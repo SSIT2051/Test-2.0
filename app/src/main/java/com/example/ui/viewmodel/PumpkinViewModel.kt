@@ -38,6 +38,7 @@ data class PlayitClaimUiState(
     val claimUrl: String = "",
     val isPolling: Boolean = false,
     val isLinked: Boolean = false,
+    val statusMessage: String? = null,
     val errorMessage: String? = null
 )
 
@@ -542,20 +543,56 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     private fun startPollingClaimExchange(code: String) {
         claimPollingJob?.cancel()
         claimPollingJob = viewModelScope.launch {
-            // Poll for up to 5 minutes (120 attempts x 2.5s)
-            for (attempt in 1..120) {
-                delay(2500)
+            // Heartbeat poll for up to 5 minutes (200 iterations x 1.5s = 300s)
+            // CRITICAL: Playit.gg's claim page ("Waiting for agent...") continuously checks
+            // if the agent is pinging /claim/setup. When /claim/setup is active,
+            // Playit's web UI immediately displays the "Add Agent to Account" confirmation button.
+            for (attempt in 1..200) {
                 if (!isActive) break
+
+                val setupStatus = tunnelManager.pollPlayitClaimSetup(code)
+                android.util.Log.d("PumpkinViewModel", "Playit poll attempt #$attempt status: $setupStatus")
+
+                when (setupStatus) {
+                    "WaitingForUserVisit" -> {
+                        _claimUiState.value = _claimUiState.value.copy(
+                            statusMessage = "Waiting for you to open the claim link..."
+                        )
+                    }
+                    "WaitingForUser" -> {
+                        _claimUiState.value = _claimUiState.value.copy(
+                            statusMessage = "Agent connected! Please tap 'Add Agent' on Playit.gg."
+                        )
+                    }
+                    "UserAccepted" -> {
+                        _claimUiState.value = _claimUiState.value.copy(
+                            statusMessage = "Accepted on Playit.gg! Fetching secret key..."
+                        )
+                    }
+                    "UserRejected" -> {
+                        _claimUiState.value = _claimUiState.value.copy(
+                            isPolling = false,
+                            errorMessage = "Claim request was rejected on Playit.gg."
+                        )
+                        break
+                    }
+                }
+
+                // Check exchange on every iteration (or especially when UserAccepted / WaitingForUser)
                 val secretKey = tunnelManager.checkPlayitClaimExchange(code)
                 if (!secretKey.isNullOrBlank()) {
+                    android.util.Log.i("PumpkinViewModel", "Playit.gg account successfully linked with secret key!")
                     _claimUiState.value = _claimUiState.value.copy(
                         isPolling = false,
-                        isLinked = true
+                        isLinked = true,
+                        statusMessage = "Successfully connected to Playit.gg!"
                     )
                     _playitAccountLinked.value = true
                     retryProvisionTunnel()
                     break
                 }
+
+                delay(1500)
             }
         }
     }

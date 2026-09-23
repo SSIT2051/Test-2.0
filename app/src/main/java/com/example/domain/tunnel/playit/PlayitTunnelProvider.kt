@@ -89,6 +89,33 @@ class PlayitTunnelProvider : TunnelProvider {
         }
     }
 
+    /**
+     * Sends heartbeat to /claim/setup.
+     * Playit's web UI requires continuous /claim/setup polling to transition from
+     * "Waiting for agent..." to "Add to Account" / "UserAccepted".
+     */
+    suspend fun pollClaimSetup(code: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val request = PlayitClaimSetupRequest(
+                code = code,
+                agentType = "self-managed",
+                version = "playit 0.15.26"
+            )
+            val resp = api.setupClaim(request)
+            val bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+            if (bodyStr.isNotBlank()) {
+                val json = org.json.JSONObject(bodyStr)
+                if (json.optString("status") == "success") {
+                    return@withContext json.optString("data") // e.g. "WaitingForUserVisit", "WaitingForUser", "UserAccepted"
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Log.e("PlayitTunnelProvider", "pollClaimSetup error: ${e.message}", e)
+            null
+        }
+    }
+
     suspend fun checkClaimExchange(code: String): String? = withContext(Dispatchers.IO) {
         try {
             val resp = api.exchangeClaim(PlayitClaimExchangeRequest(code = code))

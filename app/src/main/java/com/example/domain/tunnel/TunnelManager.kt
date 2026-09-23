@@ -35,6 +35,11 @@ class TunnelManager(
         return playitProvider.startClaimFlow()
     }
 
+    suspend fun pollPlayitClaimSetup(code: String): String? {
+        playitProvider.initialize(context)
+        return playitProvider.pollClaimSetup(code)
+    }
+
     suspend fun checkPlayitClaimExchange(code: String): String? {
         playitProvider.initialize(context)
         return playitProvider.checkClaimExchange(code)
