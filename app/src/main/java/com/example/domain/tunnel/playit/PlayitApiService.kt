@@ -1,5 +1,6 @@
 package com.example.domain.tunnel.playit
 
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -17,15 +18,27 @@ interface PlayitApiService {
         @Body request: PlayitClaimExchangeRequest
     ): Response<ResponseBody>
 
-    @POST("tunnels/create")
-    suspend fun createTunnel(
+    @POST("agents/rundata")
+    suspend fun getAgentRunData(
         @Header("Authorization") authHeader: String,
-        @Body request: PlayitCreateTunnelRequest
-    ): Response<PlayitCreateTunnelResponse>
+        @Body body: RequestBody
+    ): Response<ResponseBody>
+
+    @POST("tunnels/list")
+    suspend fun listTunnelsRaw(
+        @Header("Authorization") authHeader: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
+
+    @POST("tunnels/create")
+    suspend fun createTunnelRaw(
+        @Header("Authorization") authHeader: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
 
     @POST("tunnels/delete")
-    suspend fun deleteTunnel(
+    suspend fun deleteTunnelRaw(
         @Header("Authorization") authHeader: String,
-        @Body request: PlayitDeleteTunnelRequest
-    ): Response<PlayitDeleteTunnelResponse>
+        @Body body: RequestBody
+    ): Response<ResponseBody>
 }

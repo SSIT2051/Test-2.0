@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -129,15 +128,15 @@ fun ServerListScreen(
                             .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Wifi,
-                            contentDescription = null,
-                            tint = StatusGreen,
-                            modifier = Modifier.size(12.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(StatusGreen)
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = localWifiIp,
+                            text = "LAN $localWifiIp",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = TextPrimary

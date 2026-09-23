@@ -320,24 +320,8 @@ class MinecraftNetworkBridge(
                                 onLog(LogLevel.INFO, "geyser::bedrock", "Bedrock client connected successfully from ${packet.address.hostAddress}:${packet.port}")
                             }
                         } else if (packetId in 0x80..0x8f) {
-                            // RakNet Frame Set Packet - Acknowledge receipt (ACK = 0xC0) so Bedrock NetherNet doesn't drop with InitialConnection-13
-                            if (length >= 4) {
-                                val seqNumber = (data[1].toInt() and 0xFF) or
-                                    ((data[2].toInt() and 0xFF) shl 8) or
-                                    ((data[3].toInt() and 0xFF) shl 16)
-
-                                val ackBuf = ByteBuffer.allocate(10)
-                                ackBuf.put(0xc0.toByte()) // ACK
-                                ackBuf.putShort(1.toShort()) // count = 1
-                                ackBuf.put(1.toByte()) // single sequence number (no range)
-                                ackBuf.put((seqNumber and 0xFF).toByte())
-                                ackBuf.put(((seqNumber shr 8) and 0xFF).toByte())
-                                ackBuf.put(((seqNumber shr 16) and 0xFF).toByte())
-
-                                val ackData = ackBuf.array().copyOf(ackBuf.position())
-                                val ackPacket = DatagramPacket(ackData, ackData.size, packet.address, packet.port)
-                                bedrockDatagramSocket?.send(ackPacket)
-                            }
+                            // RakNet Frame Set Packet - Acknowledge & Handle Handshake (prevents InitialConnection-13)
+                            handleRakNetFrameSet(data, length, packet.address, packet.port, config)
                         }
                     }
                 } catch (e: Exception) {
@@ -351,6 +335,111 @@ class MinecraftNetworkBridge(
                 "Bedrock UDP socket on port $bedrockPort: ${e.localizedMessage ?: "Port busy"}"
             )
         }
+    }
+
+    private fun handleRakNetFrameSet(
+        data: ByteArray,
+        length: Int,
+        address: InetAddress,
+        port: Int,
+        config: ServerConfig
+    ) {
+        if (length < 4) return
+        val seqNumber = (data[1].toInt() and 0xFF) or
+            ((data[2].toInt() and 0xFF) shl 8) or
+            ((data[3].toInt() and 0xFF) shl 16)
+
+        // 1. Send ACK (0xC0) immediately so client knows datagram arrived
+        try {
+            val ackBuf = ByteBuffer.allocate(10)
+            ackBuf.put(0xc0.toByte()) // ACK
+            ackBuf.putShort(1.toShort()) // count = 1
+            ackBuf.put(1.toByte()) // single sequence number
+            ackBuf.put((seqNumber and 0xFF).toByte())
+            ackBuf.put(((seqNumber shr 8) and 0xFF).toByte())
+            ackBuf.put(((seqNumber shr 16) and 0xFF).toByte())
+            val ackData = ackBuf.array().copyOf(ackBuf.position())
+            bedrockDatagramSocket?.send(DatagramPacket(ackData, ackData.size, address, port))
+        } catch (_: Exception) {}
+
+        // 2. Parse Encapsulated Frame to check for ID_CONNECTION_REQUEST (0x09)
+        try {
+            var offset = 4
+            while (offset + 3 <= length) {
+                val flags = data[offset].toInt() and 0xFF
+                val reliability = (flags shr 5) and 0x07
+                val isSplit = (flags and 0x10) != 0
+                val lengthInBits = ((data[offset + 1].toInt() and 0xFF) shl 8) or (data[offset + 2].toInt() and 0xFF)
+                val bodyLength = (lengthInBits + 7) / 8
+                offset += 3
+
+                if (reliability == 2 || reliability == 3 || reliability == 4 || reliability == 6 || reliability == 7) {
+                    offset += 3 // reliableFrameIndex
+                }
+                if (reliability == 1 || reliability == 4) {
+                    offset += 3 // sequencedFrameIndex
+                }
+                if (reliability == 3 || reliability == 7) {
+                    offset += 4 // orderedFrameIndex (3) + orderChannel (1)
+                }
+                if (isSplit) {
+                    offset += 10 // splitPacketCount (4) + splitPacketId (2) + splitPacketIndex (4)
+                }
+
+                if (offset + bodyLength <= length && bodyLength > 0) {
+                    val innerId = data[offset].toInt() and 0xFF
+                    if (innerId == 0x09) { // ID_CONNECTION_REQUEST
+                        val reqTime = if (bodyLength >= 17) ByteBuffer.wrap(data, offset + 9, 8).long else System.currentTimeMillis()
+
+                        // Send ID_CONNECTION_REQUEST_ACCEPTED (0x10)
+                        val acceptPayload = ByteBuffer.allocate(1 + 7 + 2 + (10 * 7) + 8 + 8)
+                        acceptPayload.put(0x10.toByte())
+                        // Client address: IPv4 (4) + 4 bytes IP + 2 bytes port
+                        acceptPayload.put(0x04.toByte())
+                        acceptPayload.put(address.address)
+                        acceptPayload.putShort(port.toShort())
+                        // System index
+                        acceptPayload.putShort(0.toShort())
+                        // 10 internal system addresses
+                        for (i in 0 until 10) {
+                            acceptPayload.put(0x04.toByte())
+                            acceptPayload.put(0.toByte())
+                            acceptPayload.put(0.toByte())
+                            acceptPayload.put(0.toByte())
+                            acceptPayload.put(0.toByte())
+                            acceptPayload.putShort(0.toShort())
+                        }
+                        acceptPayload.putLong(reqTime)
+                        acceptPayload.putLong(System.currentTimeMillis())
+                        val acceptBytes = acceptPayload.array()
+
+                        // Wrap in Frame Set Packet 0x84 (Reliable, reliability 2)
+                        val frameLengthBits = acceptBytes.size * 8
+                        val frameSet = ByteBuffer.allocate(1 + 3 + 3 + 3 + acceptBytes.size)
+                        frameSet.put(0x84.toByte())
+                        frameSet.put(1.toByte())
+                        frameSet.put(0.toByte())
+                        frameSet.put(0.toByte())
+                        // Frame Header: flags = 0x40 (Reliability 2, Unsplit)
+                        frameSet.put(0x40.toByte())
+                        frameSet.putShort(frameLengthBits.toShort())
+                        // Reliable Frame Index = 0
+                        frameSet.put(0.toByte())
+                        frameSet.put(0.toByte())
+                        frameSet.put(0.toByte())
+                        // Body
+                        frameSet.put(acceptBytes)
+
+                        val frameData = frameSet.array()
+                        bedrockDatagramSocket?.send(DatagramPacket(frameData, frameData.size, address, port))
+                        onLog(LogLevel.INFO, "geyser::bedrock", "RakNet handshake complete: Accepted Bedrock connection from ${address.hostAddress}:$port")
+                    } else if (innerId == 0x13) { // ID_NEW_INCOMING_CONNECTION
+                        onLog(LogLevel.INFO, "geyser::bedrock", "Bedrock client joined local world session from ${address.hostAddress}:$port")
+                    }
+                }
+                offset += bodyLength
+            }
+        } catch (_: Exception) {}
     }
 
     /**

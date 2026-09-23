@@ -66,6 +66,11 @@ class TunnelManager(
         playitProvider.clearSecretKey()
     }
 
+    suspend fun getPlayitEndpoints(): com.example.domain.tunnel.playit.PlayitEndpoints {
+        playitProvider.initialize(context)
+        return playitProvider.getDiscoveredEndpoints()
+    }
+
     fun registerProvider(provider: TunnelProvider) {
         providers[provider.providerId] = provider
     }
@@ -175,5 +180,10 @@ class TunnelManager(
             tunnelDao.deleteTunnelForServer(serverId)
             LocalPortAllocator.releasePort(tunnel.localPort, tunnel.protocol)
         }
+    }
+
+    suspend fun syncPlayitTunnels(): List<com.example.domain.tunnel.playit.PlayitDiscoveredTunnel> {
+        playitProvider.initialize(context)
+        return playitProvider.queryAllTunnels()
     }
 }

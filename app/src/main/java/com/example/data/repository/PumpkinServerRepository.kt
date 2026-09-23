@@ -227,8 +227,8 @@ class PumpkinServerRepository(
     // Network Utilities
     fun getLocalDeviceIp(): String {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            var candidateIp: String? = null
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return ""
+            val candidates = mutableListOf<Pair<String, String>>()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
                 if (iface.isLoopback || !iface.isUp) continue
@@ -237,22 +237,26 @@ class PumpkinServerRepository(
                     val addr = addresses.nextElement()
                     if (addr is Inet4Address && !addr.isLoopbackAddress) {
                         val host = addr.hostAddress ?: continue
-                        // Prioritize Wi-Fi interfaces
-                        if (iface.name.contains("wlan", ignoreCase = true) || iface.name.contains("ap", ignoreCase = true)) {
-                            return host
-                        }
-                        if (candidateIp == null) {
-                            candidateIp = host
+                        if (!host.startsWith("127.")) {
+                            candidates.add(iface.name.lowercase() to host)
                         }
                     }
                 }
             }
-            if (!candidateIp.isNullOrBlank()) {
-                return candidateIp
-            }
-        } catch (e: Exception) {
-            // ignore
+            // 1. Wi-Fi interface (wlan, etc.)
+            candidates.firstOrNull { it.first.contains("wlan") }?.let { return it.second }
+            // 2. Hotspot / Access Point interface (ap, rndis, p2p, softap)
+            candidates.firstOrNull { it.first.contains("ap") || it.first.contains("rndis") || it.first.contains("p2p") }?.let { return it.second }
+            // 3. Ethernet (eth)
+            candidates.firstOrNull { it.first.contains("eth") }?.let { return it.second }
+            // 4. Any private LAN range (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+            candidates.firstOrNull {
+                it.second.startsWith("192.168.") || it.second.startsWith("10.") || it.second.startsWith("172.")
+            }?.let { return it.second }
+            // 5. Any candidate
+            candidates.firstOrNull()?.let { return it.second }
+        } catch (_: Exception) {
         }
-        return "192.168.1.150"
+        return ""
     }
 }

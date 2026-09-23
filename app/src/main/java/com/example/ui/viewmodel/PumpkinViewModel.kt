@@ -158,8 +158,25 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     )
     val settings: StateFlow<com.example.domain.model.AppSettings> = _settings.asStateFlow()
 
+    private val _playitEndpoints = MutableStateFlow<com.example.domain.tunnel.playit.PlayitEndpoints?>(null)
+    val playitEndpoints: StateFlow<com.example.domain.tunnel.playit.PlayitEndpoints?> = _playitEndpoints.asStateFlow()
+
     init {
+        PumpkinServerService.onStopRequested = {
+            stopCurrentServer()
+        }
+        PumpkinServerService.onRestartRequested = {
+            restartCurrentServer()
+        }
+
         viewModelScope.launch {
+            // Check initial Playit account status
+            val key = tunnelManager.getPlayitSecretKey()
+            _playitAccountLinked.value = key.isNotBlank()
+            if (key.isNotBlank()) {
+                val endpoints = tunnelManager.getPlayitEndpoints()
+                _playitEndpoints.value = endpoints
+            }
             // Load and sync official market catalog
             repository.refreshPluginsFromRemote()
         }
@@ -183,16 +200,20 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
                 context = getApplication(),
                 serverName = server.name,
                 bedrockPort = server.bedrockPort,
-                javaPort = server.port
+                javaPort = server.port,
+                localIp = repository.getLocalDeviceIp(),
+                publicAddress = server.playitDomain
             )
             if (server.playitEnabled) {
                 viewModelScope.launch {
                     val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
                     if (tunnel.publicHost.isNotBlank()) {
+                        val endpoint = "${tunnel.publicHost}:${tunnel.publicPort}"
                         updateServerConfig(server.copy(
-                            playitDomain = tunnel.displayEndpoint,
+                            playitDomain = endpoint,
                             playitPort = tunnel.publicPort
                         ))
+                        _playitEndpoints.value = tunnelManager.getPlayitEndpoints()
                     }
                 }
             }
@@ -228,7 +249,9 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             context = getApplication(),
             serverName = server.name,
             bedrockPort = server.bedrockPort,
-            javaPort = server.port
+            javaPort = server.port,
+            localIp = repository.getLocalDeviceIp(),
+            publicAddress = server.playitDomain
         )
 
         // Launch real tunnel provisioning asynchronously
@@ -236,10 +259,12 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch {
                 val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
                 if (tunnel.publicHost.isNotBlank()) {
+                    val endpoint = "${tunnel.publicHost}:${tunnel.publicPort}"
                     updateServerConfig(server.copy(
-                        playitDomain = tunnel.displayEndpoint,
+                        playitDomain = endpoint,
                         playitPort = tunnel.publicPort
                     ))
+                    _playitEndpoints.value = tunnelManager.getPlayitEndpoints()
                 }
             }
         }
@@ -261,16 +286,20 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             context = getApplication(),
             serverName = server.name,
             bedrockPort = server.bedrockPort,
-            javaPort = server.port
+            javaPort = server.port,
+            localIp = repository.getLocalDeviceIp(),
+            publicAddress = server.playitDomain
         )
         if (server.playitEnabled) {
             viewModelScope.launch {
                 val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
                 if (tunnel.publicHost.isNotBlank()) {
+                    val endpoint = "${tunnel.publicHost}:${tunnel.publicPort}"
                     updateServerConfig(server.copy(
-                        playitDomain = tunnel.displayEndpoint,
+                        playitDomain = endpoint,
                         playitPort = tunnel.publicPort
                     ))
+                    _playitEndpoints.value = tunnelManager.getPlayitEndpoints()
                 }
             }
         }
@@ -635,12 +664,47 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     fun retryProvisionTunnel() {
         val server = activeServer.value ?: return
         viewModelScope.launch {
-            val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
-            if (tunnel.publicHost.isNotBlank()) {
+            val endpoints = tunnelManager.getPlayitEndpoints()
+            _playitEndpoints.value = endpoints
+            val activeEndpoint = if (server.bedrockCrossplayEnabled) endpoints.bedrockTunnel ?: endpoints.javaTunnel else endpoints.javaTunnel ?: endpoints.bedrockTunnel
+
+            if (activeEndpoint != null) {
+                val fullDomain = "${activeEndpoint.host}:${activeEndpoint.port}"
                 updateServerConfig(server.copy(
-                    playitDomain = tunnel.displayEndpoint,
-                    playitPort = tunnel.publicPort
+                    playitDomain = fullDomain,
+                    playitPort = activeEndpoint.port
                 ))
+                if (server.status == ServerStatus.RUNNING) {
+                    PumpkinServerService.start(
+                        context = getApplication(),
+                        serverName = server.name,
+                        bedrockPort = server.bedrockPort,
+                        javaPort = server.port,
+                        localIp = repository.getLocalDeviceIp(),
+                        publicAddress = fullDomain
+                    )
+                }
+            } else {
+                val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
+                if (tunnel.publicHost.isNotBlank()) {
+                    val fullDomain = "${tunnel.publicHost}:${tunnel.publicPort}"
+                    updateServerConfig(server.copy(
+                        playitDomain = fullDomain,
+                        playitPort = tunnel.publicPort
+                    ))
+                    val updatedEndpoints = tunnelManager.getPlayitEndpoints()
+                    _playitEndpoints.value = updatedEndpoints
+                    if (server.status == ServerStatus.RUNNING) {
+                        PumpkinServerService.start(
+                            context = getApplication(),
+                            serverName = server.name,
+                            bedrockPort = server.bedrockPort,
+                            javaPort = server.port,
+                            localIp = repository.getLocalDeviceIp(),
+                            publicAddress = fullDomain
+                        )
+                    }
+                }
             }
         }
     }

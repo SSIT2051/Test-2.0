@@ -1,17 +1,13 @@
 package com.example.ui.components
 
 import android.annotation.SuppressLint
-import android.content.Intent
-import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,17 +20,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -49,7 +41,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,24 +81,8 @@ fun PlayitClaimDialog(
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Options & Browser, 1 = In-App WebView
     var manualKeyInput by remember { mutableStateOf("") }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
-
-    // Auto-launch browser when claim URL becomes available
-    LaunchedEffect(state.claimUrl) {
-        if (state.claimUrl.isNotBlank()) {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.claimUrl)).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            } catch (_: Exception) {
-                // Browser intent failed or unavailable; user will see the dialog with in-app webview & manual copy
-                selectedTab = 1 // Auto-switch to In-App WebView if external browser didn't launch
-            }
-        }
-    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -116,13 +91,13 @@ fun PlayitClaimDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
-                .fillMaxHeight(0.88f)
+                .fillMaxHeight(0.92f)
                 .clip(RoundedCornerShape(16.dp))
                 .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(16.dp)),
             colors = CardDefaults.cardColors(containerColor = ObsidianDark)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Dialog Header
+                // Dialog Header - Clean, in-app web claim
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -133,7 +108,7 @@ fun PlayitClaimDialog(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.Public,
+                            imageVector = Icons.Default.Language,
                             contentDescription = null,
                             tint = PumpkinOrange,
                             modifier = Modifier.size(20.dp)
@@ -141,29 +116,43 @@ fun PlayitClaimDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Claim Playit.gg Account",
+                                text = "Playit Claim (In-App Web)",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Public Tunnel Setup & Verification",
+                                text = "Authorize your tunnel directly inside the app",
                                 fontSize = 11.sp,
                                 color = TextMuted
                             )
                         }
                     }
 
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = TextMuted
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (state.claimUrl.isNotBlank() && !state.isLoading && !state.isLinked) {
+                            IconButton(
+                                onClick = { webViewRef?.reload() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Reload Page",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = TextMuted
+                            )
+                        }
                     }
                 }
 
-                // Divider
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -173,7 +162,7 @@ fun PlayitClaimDialog(
 
                 // Dialog Content Body
                 if (state.isLoading) {
-                    // 1. Loading State
+                    // Loading State
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -190,20 +179,20 @@ fun PlayitClaimDialog(
                                 modifier = Modifier.size(44.dp)
                             )
                             Text(
-                                text = "Contacting Playit.gg API...",
+                                text = "Generating Playit Claim Session...",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Generating secure authorization code for this device",
+                                text = "Creating direct authorization link for this device",
                                 fontSize = 12.sp,
                                 color = TextMuted
                             )
                         }
                     }
                 } else if (state.isLinked) {
-                    // 2. Success / Linked State
+                    // Success / Linked State
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -227,7 +216,7 @@ fun PlayitClaimDialog(
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Your Playit.gg Agent is authenticated. Public tunnel endpoints will now allocate and route players over the internet.",
+                                text = "Your Playit.gg Agent is now authorized. Public tunnel endpoints are active and routing players.",
                                 fontSize = 13.sp,
                                 color = TextSecondary,
                                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -247,7 +236,7 @@ fun PlayitClaimDialog(
                         }
                     }
                 } else if (state.errorMessage != null) {
-                    // 3. Error State
+                    // Error State
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -302,7 +291,7 @@ fun PlayitClaimDialog(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            // Fallback manual key input even on network failure
+                            // Fallback manual key input
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -312,12 +301,16 @@ fun PlayitClaimDialog(
                                     .padding(12.dp)
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(
-                                        text = "Or paste your Agent Secret Key manually:",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextPrimary
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Key, contentDescription = null, tint = PumpkinOrange, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Paste Secret Key manually:",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TextPrimary
+                                        )
+                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -326,7 +319,7 @@ fun PlayitClaimDialog(
                                         OutlinedTextField(
                                             value = manualKeyInput,
                                             onValueChange = { manualKeyInput = it },
-                                            placeholder = { Text("Secret Key from playit dashboard", fontSize = 11.sp) },
+                                            placeholder = { Text("Agent Secret Key", fontSize = 11.sp) },
                                             singleLine = true,
                                             modifier = Modifier.weight(1f),
                                             colors = OutlinedTextFieldDefaults.colors(
@@ -353,398 +346,112 @@ fun PlayitClaimDialog(
                         }
                     }
                 } else {
-                    // 4. Ready State: Claim Code Generated & Polling for Approval
+                    // Ready State: Pure In-App Web View Claim
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Navigation Tab Bar: [ Browser & Link ] | [ In-App WebView ]
+                        // Top Claim Info Bar: Claim Code + Polling Status
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(ObsidianSurfaceElevated)
-                                .padding(6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selectedTab == 0) PumpkinOrange else Color.Transparent)
-                                    .clickable { selectedTab = 0 }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.OpenInBrowser,
-                                        contentDescription = null,
-                                        tint = if (selectedTab == 0) Color.Black else TextSecondary,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Browser & Link",
-                                        fontSize = 12.sp,
+                                        text = "CLAIM CODE: ",
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (selectedTab == 0) Color.Black else TextSecondary
+                                        color = PumpkinOrange
+                                    )
+                                    Text(
+                                        text = state.code,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = TextPrimary
                                     )
                                 }
+                                Text(
+                                    text = state.statusMessage ?: "Tap 'Add Agent to Account' in web view below",
+                                    fontSize = 10.sp,
+                                    color = TextSecondary,
+                                    maxLines = 1
+                                )
                             }
 
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selectedTab == 1) PumpkinOrange else Color.Transparent)
-                                    .clickable { selectedTab = 1 }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(state.code))
+                                    Toast.makeText(context, "Code copied: ${state.code}", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Language,
-                                        contentDescription = null,
-                                        tint = if (selectedTab == 1) Color.Black else TextSecondary,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "In-App WebView",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selectedTab == 1) Color.Black else TextSecondary
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy code",
+                                    tint = PumpkinOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
 
-                        // Tab 0: Browser & Quick Link Controls
-                        if (selectedTab == 0) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                // Claim Code Badge
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(ObsidianSurfaceElevated)
-                                        .border(1.dp, PumpkinOrange.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                                        .padding(14.dp)
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(
-                                            text = "PLAYIT CLAIM CODE",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = PumpkinOrange,
-                                            letterSpacing = 1.sp
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = state.code,
-                                                fontSize = 20.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = TextPrimary
-                                            )
-
-                                            IconButton(
-                                                onClick = {
-                                                    clipboard.setText(AnnotatedString(state.code))
-                                                    Toast.makeText(context, "Claim code copied: ${state.code}", Toast.LENGTH_SHORT).show()
-                                                },
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy code", tint = PumpkinOrange, modifier = Modifier.size(18.dp))
-                                            }
-                                        }
-                                        Text(
-                                            text = "Approve this code on Playit.gg to link your host device.",
-                                            fontSize = 11.sp,
-                                            color = TextMuted
-                                        )
-                                    }
-                                }
-
-                                // Primary Action: Open in External Browser
-                                Button(
-                                    onClick = {
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.claimUrl)).apply {
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Cannot open external browser: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            selectedTab = 1 // Switch to In-App WebView
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = PumpkinOrange,
-                                        contentColor = Color.Black
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(44.dp)
-                                ) {
-                                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Open Claim Link in Browser", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-
-                                // Secondary Action: Switch to in-app WebView
-                                OutlinedButton(
-                                    onClick = { selectedTab = 1 },
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(40.dp)
-                                ) {
-                                    Icon(Icons.Default.Language, contentDescription = null, tint = PumpkinOrange, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Claim Here Inside App (WebView)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                }
-
-                                // Full URL Copy Bar
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(ObsidianSurface)
-                                        .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
-                                        .padding(10.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text("Direct URL", fontSize = 10.sp, color = TextMuted)
-                                            Text(
-                                                text = state.claimUrl,
-                                                fontSize = 11.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = TextPrimary,
-                                                maxLines = 1
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                clipboard.setText(AnnotatedString(state.claimUrl))
-                                                Toast.makeText(context, "Claim URL copied to clipboard!", Toast.LENGTH_SHORT).show()
-                                            },
-                                            modifier = Modifier.size(30.dp)
-                                        ) {
-                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL", tint = TextSecondary, modifier = Modifier.size(15.dp))
-                                        }
-                                    }
-                                }
-
-                                // Live Polling Status Indicator
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(ObsidianSurfaceElevated)
-                                        .padding(12.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = PumpkinOrange
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = state.statusMessage ?: "Agent connected! Waiting for your approval...",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = TextPrimary
-                                            )
-                                            Text(
-                                                text = "Heartbeat active. The Playit page will unlock the 'Add Agent' button.",
-                                                fontSize = 10.sp,
-                                                color = TextMuted
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // Manual Agent Secret Key Section
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(ObsidianSurface)
-                                        .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
-                                        .padding(12.dp)
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Key, contentDescription = null, tint = PumpkinOrange, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = "Already have an Agent Secret Key?",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextPrimary
-                                            )
-                                        }
-                                        Text(
-                                            text = "If you created an agent on playit.gg/manage/agents, paste the secret key here:",
-                                            fontSize = 10.sp,
-                                            color = TextMuted
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            OutlinedTextField(
-                                                value = manualKeyInput,
-                                                onValueChange = { manualKeyInput = it },
-                                                placeholder = { Text("Paste Agent Secret Key", fontSize = 11.sp) },
-                                                singleLine = true,
-                                                modifier = Modifier.weight(1f),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    focusedBorderColor = PumpkinOrange,
-                                                    unfocusedBorderColor = ObsidianSurfaceBorder,
-                                                    focusedTextColor = TextPrimary,
-                                                    unfocusedTextColor = TextPrimary
-                                                )
-                                            )
-                                            Button(
-                                                onClick = {
-                                                    onSaveManualKey(manualKeyInput)
-                                                    Toast.makeText(context, "Agent key saved!", Toast.LENGTH_SHORT).show()
-                                                },
-                                                enabled = manualKeyInput.isNotBlank(),
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = PumpkinOrange,
-                                                    contentColor = Color.Black
-                                                ),
-                                                shape = RoundedCornerShape(8.dp)
-                                            ) {
-                                                Text("Link", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // Tab 1: In-App WebView
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                // WebView Control Bar
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(ObsidianSurface)
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "In-App Browser: playit.gg/claim",
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = TextMuted
+                        // Embedded In-App WebView
+                        AndroidView(
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
                                     )
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.databaseEnabled = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    settings.setSupportZoom(true)
+                                    settings.builtInZoomControls = true
+                                    settings.displayZoomControls = false
 
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        IconButton(
-                                            onClick = { webViewRef?.reload() },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = PumpkinOrange, modifier = Modifier.size(16.dp))
-                                        }
-
-                                        IconButton(
-                                            onClick = {
-                                                try {
-                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(state.claimUrl)).apply {
-                                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                    }
-                                                    context.startActivity(intent)
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, "Cannot open external browser: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(Icons.Default.OpenInBrowser, contentDescription = "Open External", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                    webViewClient = object : WebViewClient() {
+                                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                            return false
                                         }
                                     }
+                                    loadUrl(state.claimUrl)
+                                    webViewRef = this
                                 }
-
-                                // Embedded WebView
-                                AndroidView(
-                                    factory = { ctx ->
-                                        WebView(ctx).apply {
-                                            layoutParams = ViewGroup.LayoutParams(
-                                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                                ViewGroup.LayoutParams.MATCH_PARENT
-                                            )
-                                            settings.javaScriptEnabled = true
-                                            settings.domStorageEnabled = true
-                                            settings.databaseEnabled = true
-                                            settings.loadWithOverviewMode = true
-                                            settings.useWideViewPort = true
-                                            settings.setSupportZoom(true)
-                                            settings.builtInZoomControls = true
-                                            settings.displayZoomControls = false
-
-                                            webViewClient = object : WebViewClient() {
-                                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                                    return false
-                                                }
-                                            }
-                                            loadUrl(state.claimUrl)
-                                            webViewRef = this
-                                        }
-                                    },
-                                    update = { wv ->
-                                        if (wv.url != state.claimUrl && state.claimUrl.isNotBlank()) {
-                                            wv.loadUrl(state.claimUrl)
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f)
-                                )
-
-                                // Bottom helper banner
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(ObsidianSurfaceElevated)
-                                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(12.dp),
-                                            strokeWidth = 2.dp,
-                                            color = PumpkinOrange
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = state.statusMessage ?: "Listening for authorization... Tap 'Add Agent' above.",
-                                            fontSize = 11.sp,
-                                            color = TextSecondary
-                                        )
-                                    }
+                            },
+                            update = { wv ->
+                                if (wv.url != state.claimUrl && state.claimUrl.isNotBlank()) {
+                                    wv.loadUrl(state.claimUrl)
                                 }
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        )
+
+                        // Bottom Status Bar
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(ObsidianSurface)
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp,
+                                color = PumpkinOrange
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Listening for authorization in web view...",
+                                fontSize = 11.sp,
+                                color = TextMuted
+                            )
                         }
                     }
                 }
