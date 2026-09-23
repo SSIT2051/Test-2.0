@@ -358,11 +358,20 @@ fun CreateServerDialog(
                             .background(ObsidianSurfaceElevated)
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Text(
-                            text = "⚡ Designated tunnel domain, public IP, and port will be generated automatically.",
-                            fontSize = 10.sp,
-                            color = PumpkinOrange
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = PumpkinOrange,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Designated tunnel domain, public IP, and port will be generated automatically.",
+                                fontSize = 10.sp,
+                                color = PumpkinOrange
+                            )
+                        }
                     }
                 }
 

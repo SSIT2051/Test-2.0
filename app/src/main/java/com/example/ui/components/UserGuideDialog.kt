@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RocketLaunch
@@ -438,7 +439,12 @@ fun UserGuideDialog(
                                             .padding(8.dp)
                                     ) {
                                         Row(verticalAlignment = Alignment.Top) {
-                                            Text("💡", fontSize = 12.sp)
+                                            Icon(
+                                                imageVector = Icons.Default.Lightbulb,
+                                                contentDescription = null,
+                                                tint = PumpkinOrange,
+                                                modifier = Modifier.size(14.dp).padding(top = 1.dp)
+                                            )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = topic.tip,

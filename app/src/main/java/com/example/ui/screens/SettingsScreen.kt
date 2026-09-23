@@ -404,8 +404,8 @@ fun SettingsScreen(
                             }
                         }
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text("Made with ❤️ by SSIT • Engine: PumpkinMC (Rust)", fontSize = 12.sp, color = TextMuted)
-                        Text("World's first native ARM64 Minecraft host for Android", fontSize = 11.sp, color = TextSecondary)
+                        Text("Developed by SSIT • Engine: PumpkinMC (Rust)", fontSize = 12.sp, color = TextMuted)
+                        Text("Native ARM64 Minecraft server host for Android", fontSize = 11.sp, color = TextSecondary)
                     }
                 }
             }

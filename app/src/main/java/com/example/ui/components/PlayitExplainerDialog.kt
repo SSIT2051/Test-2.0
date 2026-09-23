@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.VpnLock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -197,12 +199,12 @@ fun PlayitExplainerDialog(
                                     Icon(Icons.Default.Smartphone, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(24.dp))
                                     Text("Friend's Game", fontSize = 10.sp, color = TextMuted)
                                 }
-                                Text("➔", color = Color(0xFF00E676), fontSize = 14.sp)
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(Icons.Default.Hub, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(24.dp))
                                     Text("Playit Cloud", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
                                 }
-                                Text("➔", color = Color(0xFF00E676), fontSize = 14.sp)
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(Icons.Default.Router, contentDescription = null, tint = PumpkinOrange, modifier = Modifier.size(24.dp))
                                     Text("Your Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PumpkinOrange)
@@ -263,12 +265,16 @@ fun PlayitExplainerDialog(
                             .padding(12.dp)
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("🎮 WHAT TO TELL YOUR FRIENDS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.SportsEsports, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("WHAT TO TELL YOUR FRIENDS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                            }
                             Text(
                                 text = "Tell your friends to open Minecraft, go to Play > Servers > Add Server, and enter:\n" +
                                         "• Server Address: $playitDomain\n" +
                                         "• Port: $playitPort\n\n" +
-                                        "⚠️ Critical: Do NOT append :port to the server address field! Minecraft has a separate box for Port.",
+                                        "Note: Do NOT append :port to the server address field! Minecraft has a separate box for Port.",
                                 fontSize = 11.sp,
                                 color = Color(0xFFC8E6C9),
                                 lineHeight = 16.sp
@@ -305,7 +311,7 @@ fun PlayitExplainerDialog(
                                 action = Intent.ACTION_SEND
                                 putExtra(
                                     Intent.EXTRA_TEXT,
-                                    "🎮 Join my Minecraft Server!\n\n" +
+                                    "Join my Minecraft Server!\n\n" +
                                             "• Server Address: $playitDomain\n" +
                                             "• Port: $playitPort\n\n" +
                                             "How to join:\n" +

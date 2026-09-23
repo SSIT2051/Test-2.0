@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -116,6 +117,7 @@ fun ConsoleScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .imePadding()
             .padding(16.dp)
     ) {
         // Control Bar
@@ -297,6 +299,8 @@ fun ConsoleScreen(
                 ),
                 modifier = Modifier.weight(1f),
                 colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
                     focusedBorderColor = PumpkinOrange,
                     unfocusedBorderColor = ObsidianSurfaceBorder,
                     focusedContainerColor = ObsidianSurface,
@@ -316,7 +320,7 @@ fun ConsoleScreen(
                     }
                 },
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(52.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(PumpkinOrange)
             ) {

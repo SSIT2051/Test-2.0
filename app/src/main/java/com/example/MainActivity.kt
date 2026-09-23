@@ -2,6 +2,7 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -177,106 +179,127 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
             }
         )
     } else {
+        BackHandler(enabled = editingFile != null) {
+            viewModel.closeFileEditor()
+        }
+
+        BackHandler(enabled = editingFile == null && selectedServerId != null) {
+            if (selectedTabIndex != 0) {
+                selectedTabIndex = 0
+            } else {
+                viewModel.deselectServer()
+            }
+        }
+
         // Dedicated Server Detail Management
         Scaffold(
             topBar = {
-                TopAppBar(
-                    navigationIcon = {
-                        IconButton(onClick = { viewModel.deselectServer() }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back to Server List",
-                                tint = PumpkinOrange
-                            )
-                        }
-                    },
-                    title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { showServerSheet = true }
-                                .padding(vertical = 4.dp, horizontal = 4.dp)
-                        ) {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = activeServer?.name ?: "Server",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDropDown,
-                                        contentDescription = "Switch Server",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Text(
-                                    text = "Bedrock ${activeServer?.bedrockPort} • Java ${activeServer?.port}",
-                                    fontSize = 10.sp,
-                                    color = TextMuted
+                if (editingFile == null) {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = { viewModel.deselectServer() }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back to Server List",
+                                    tint = PumpkinOrange
                                 )
                             }
-                        }
-                    },
-                    actions = {
-                        activeServer?.let { srv ->
-                            Box(modifier = Modifier.padding(end = 6.dp)) {
-                                StatusBadge(status = srv.status)
+                        },
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showServerSheet = true }
+                                    .padding(vertical = 4.dp, horizontal = 4.dp)
+                            ) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = activeServer?.name ?: "Server",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Switch Server",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = "Bedrock ${activeServer?.bedrockPort} • Java ${activeServer?.port}",
+                                        fontSize = 10.sp,
+                                        color = TextMuted
+                                    )
+                                }
                             }
-                        }
+                        },
+                        actions = {
+                            activeServer?.let { srv ->
+                                Box(modifier = Modifier.padding(end = 6.dp)) {
+                                    StatusBadge(status = srv.status)
+                                }
+                            }
 
-                        IconButton(onClick = { showCreateServerDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Create Server",
-                                tint = PumpkinOrange,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = ObsidianDark,
-                        titleContentColor = TextPrimary
+                            IconButton(onClick = { showCreateServerDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Create Server",
+                                    tint = PumpkinOrange,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = ObsidianDark,
+                            titleContentColor = TextPrimary
+                        )
                     )
-                )
+                }
             },
             bottomBar = {
                 if (editingFile == null) {
-                    NavigationBar(
-                        containerColor = ObsidianSurface,
-                        tonalElevation = 0.dp,
-                        modifier = Modifier.border(1.dp, ObsidianSurfaceBorder)
-                    ) {
-                        navItems.forEachIndexed { index, item ->
-                            val isSelected = selectedTabIndex == index
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { selectedTabIndex = index },
-                                icon = {
-                                    Icon(
-                                        imageVector = item.icon,
-                                        contentDescription = item.title
+                    Column {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(ObsidianSurfaceBorder)
+                        )
+                        NavigationBar(
+                            containerColor = ObsidianSurface,
+                            tonalElevation = 0.dp
+                        ) {
+                            navItems.forEachIndexed { index, item ->
+                                val isSelected = selectedTabIndex == index
+                                NavigationBarItem(
+                                    selected = isSelected,
+                                    onClick = { selectedTabIndex = index },
+                                    icon = {
+                                        Icon(
+                                            imageVector = item.icon,
+                                            contentDescription = item.title
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = item.title,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = PumpkinOrange,
+                                        selectedTextColor = PumpkinOrange,
+                                        unselectedIconColor = TextSecondary,
+                                        unselectedTextColor = TextSecondary,
+                                        indicatorColor = ObsidianSurfaceElevated
                                     )
-                                },
-                                label = {
-                                    Text(
-                                        text = item.title,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = PumpkinOrange,
-                                    selectedTextColor = PumpkinOrange,
-                                    unselectedIconColor = TextSecondary,
-                                    unselectedTextColor = TextSecondary,
-                                    indicatorColor = ObsidianSurfaceElevated
                                 )
-                            )
+                            }
                         }
                     }
                 }
