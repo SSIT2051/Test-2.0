@@ -21,11 +21,38 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Accept Android SDK Licenses
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+
+          SDKMANAGER=""
+          if command -v sdkmanager &> /dev/null; then
+            SDKMANAGER="sdkmanager"
+          elif [ -n "$ANDROID_HOME" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -n "$ANDROID_SDK_ROOT" ] && [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          if [ -n "$SDKMANAGER" ]; then
+            echo "Accepting Android SDK licenses using $SDKMANAGER..."
+            yes | "$SDKMANAGER" --licenses || true
+          fi
+
+          LIC_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/licenses"
+          if [ -n "$LIC_DIR" ]; then
+            mkdir -p "$LIC_DIR"
+            echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n8563bc794f37e28429764e37a88b142b23603240" > "$LIC_DIR/android-sdk-license" 2>/dev/null || true
+            echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910" > "$LIC_DIR/android-sdk-preview-license" 2>/dev/null || true
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
