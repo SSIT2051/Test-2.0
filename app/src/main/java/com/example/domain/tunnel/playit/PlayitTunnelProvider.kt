@@ -150,12 +150,13 @@ class PlayitTunnelProvider : TunnelProvider {
         }
     }
 
-    override suspend fun createTunnel(
-        serverId: String,
+    suspend fun createTunnelInternal(
         serverName: String,
         localPort: Int,
-        protocol: TunnelProtocol
-    ): TunnelResult = withContext(Dispatchers.IO) {
+        protocol: TunnelProtocol,
+        authHeader: String,
+        agentId: String
+    ): Boolean {
         val tunnelType = when (protocol) {
             TunnelProtocol.TCP -> "minecraft-java"
             TunnelProtocol.UDP -> "minecraft-bedrock"
@@ -164,7 +165,117 @@ class PlayitTunnelProvider : TunnelProvider {
             TunnelProtocol.TCP -> "tcp"
             TunnelProtocol.UDP -> "udp"
         }
+        val jsonMedia = "application/json".toMediaTypeOrNull()
 
+        // 1. Try standard schema (used by playit-api / playit-minecraft-plugin)
+        val originData = JSONObject().apply {
+            if (agentId.isNotBlank()) {
+                put("agent_id", agentId)
+            }
+            put("local_ip", "127.0.0.1")
+            put("local_port", localPort)
+        }
+        val originObj = JSONObject().apply {
+            put("type", if (agentId.isNotBlank()) "agent" else "default")
+            put("data", originData)
+        }
+
+        val createJson = JSONObject().apply {
+            put("name", "PumpkinMC ${if (protocol == TunnelProtocol.UDP) "Bedrock" else "Java"}")
+            put("tunnel_type", tunnelType)
+            put("port_type", portType)
+            put("port_count", 1)
+            put("origin", originObj)
+            put("enabled", true)
+        }
+        try {
+            val resp = api.createTunnelRaw(authHeader, createJson.toString().toRequestBody(jsonMedia))
+            val body = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+            Log.d("PlayitTunnelProvider", "createTunnelRaw ($tunnelType) code: ${resp.code()}, body: $body")
+            if (resp.isSuccessful) return true
+        } catch (e: Exception) {
+            Log.w("PlayitTunnelProvider", "createTunnelRaw error: ${e.message}")
+        }
+
+        // 2. Fallback to v1 schema
+        val v1Json = JSONObject().apply {
+            put("name", "PumpkinMC ${if (protocol == TunnelProtocol.UDP) "Bedrock" else "Java"}")
+            put("protocol", JSONObject().apply {
+                put("type", "tunnel-type")
+                put("details", tunnelType)
+            })
+            put("origin", JSONObject().apply {
+                put("type", if (agentId.isNotBlank()) "agent" else "default")
+                put("data", JSONObject().apply {
+                    if (agentId.isNotBlank()) put("agent_id", agentId)
+                    put("local_ip", "127.0.0.1")
+                    put("local_port", localPort)
+                })
+            })
+            put("endpoint", JSONObject().apply {
+                put("type", "region")
+                put("details", JSONObject().apply {
+                    put("region", "global")
+                })
+            })
+            put("enabled", true)
+        }
+        try {
+            val v1Resp = api.createV1TunnelRaw(authHeader, v1Json.toString().toRequestBody(jsonMedia))
+            Log.d("PlayitTunnelProvider", "createV1TunnelRaw ($tunnelType) code: ${v1Resp.code()}")
+            return v1Resp.isSuccessful
+        } catch (e: Exception) {
+            Log.w("PlayitTunnelProvider", "createV1TunnelRaw error: ${e.message}")
+        }
+
+        return false
+    }
+
+    suspend fun autoProvisionBothTunnels(
+        serverName: String = "PumpkinMC Server",
+        bedrockPort: Int = 19132,
+        javaPort: Int = 25565
+    ): PlayitEndpoints = withContext(Dispatchers.IO) {
+        val secretKey = getSavedSecretKey()
+        if (secretKey.isBlank()) return@withContext PlayitEndpoints(null, null)
+
+        val authHeader = if (secretKey.startsWith("agent-key ", ignoreCase = true)) secretKey else "agent-key $secretKey"
+        val runData = fetchAgentRunData(authHeader)
+        val agentId = runData?.agentId.orEmpty()
+
+        var currentEndpoints = getDiscoveredEndpoints()
+        var needBedrock = currentEndpoints.bedrockTunnel == null
+        var needJava = currentEndpoints.javaTunnel == null
+
+        if (needBedrock) {
+            createTunnelInternal(serverName, bedrockPort, TunnelProtocol.UDP, authHeader, agentId)
+        }
+        if (needJava) {
+            createTunnelInternal(serverName, javaPort, TunnelProtocol.TCP, authHeader, agentId)
+        }
+
+        // Poll for up to 10 seconds (10 x 1000ms) for public addresses to allocate
+        for (attempt in 1..10) {
+            delay(1000)
+            currentEndpoints = getDiscoveredEndpoints()
+            if (currentEndpoints.bedrockTunnel != null && currentEndpoints.javaTunnel != null) {
+                break
+            }
+            if (currentEndpoints.bedrockTunnel != null || currentEndpoints.javaTunnel != null) {
+                // At least one allocated, keep polling briefly
+                if (attempt >= 5) break
+            }
+        }
+
+        currentEndpoints
+    }
+
+    override suspend fun createTunnel(
+        serverId: String,
+        serverName: String,
+        localPort: Int,
+        protocol: TunnelProtocol
+    ): TunnelResult = withContext(Dispatchers.IO) {
         try {
             val secretKey = getSavedSecretKey()
             if (secretKey.isBlank()) {
@@ -174,7 +285,6 @@ class PlayitTunnelProvider : TunnelProvider {
             }
 
             val authHeader = if (secretKey.startsWith("agent-key ", ignoreCase = true)) secretKey else "agent-key $secretKey"
-            val jsonMedia = "application/json".toMediaTypeOrNull()
 
             // 1. Query rundata and tunnel list for existing allocated tunnels
             val initialRunData = fetchAgentRunData(authHeader)
@@ -192,66 +302,8 @@ class PlayitTunnelProvider : TunnelProvider {
                 )
             }
 
-            // 2. Request creation of new tunnel with proper origin structure
-            // Try v1 schema first
-            val v1Json = JSONObject().apply {
-                put("name", serverName.take(30))
-                put("protocol", JSONObject().apply {
-                    put("type", "tunnel-type")
-                    put("details", tunnelType)
-                })
-                put("origin", JSONObject().apply {
-                    put("type", "agent")
-                    put("data", JSONObject().apply {
-                        if (agentId.isNotBlank()) put("agent_id", agentId)
-                        put("config", JSONObject().apply {
-                            put("local_port", localPort)
-                        })
-                    })
-                })
-                put("endpoint", JSONObject().apply {
-                    put("type", "region")
-                    put("details", JSONObject().apply {
-                        put("region", "global")
-                    })
-                })
-                put("enabled", true)
-            }
-            try {
-                val v1Resp = api.createV1TunnelRaw(authHeader, v1Json.toString().toRequestBody(jsonMedia))
-                Log.d("PlayitTunnelProvider", "v1/tunnels/create HTTP: ${v1Resp.code()}")
-            } catch (e: Exception) {
-                Log.w("PlayitTunnelProvider", "v1 create tunnel attempt: ${e.message}")
-            }
-
-            // Also try standard schema
-            val originObj = JSONObject().apply {
-                put("type", "agent")
-                put("data", JSONObject().apply {
-                    if (agentId.isNotBlank()) {
-                        put("agent_id", agentId)
-                    }
-                    put("local_ip", "127.0.0.1")
-                    put("local_port", localPort)
-                })
-            }
-
-            val createJson = JSONObject().apply {
-                put("name", serverName.take(30))
-                put("tunnel_type", tunnelType)
-                put("port_type", portType)
-                put("port_count", 1)
-                put("origin", originObj)
-                put("enabled", true)
-            }
-            val createBody = createJson.toString().toRequestBody(jsonMedia)
-            try {
-                val createResp = api.createTunnelRaw(authHeader, createBody)
-                val createStr = createResp.body()?.string() ?: createResp.errorBody()?.string() ?: ""
-                Log.d("PlayitTunnelProvider", "tunnels/create result: $createStr")
-            } catch (e: Exception) {
-                Log.w("PlayitTunnelProvider", "legacy create tunnel attempt: ${e.message}")
-            }
+            // 2. Request creation of new tunnel
+            createTunnelInternal(serverName, localPort, protocol, authHeader, agentId)
 
             // 3. Poll for assigned public address & port
             for (attempt in 1..8) {
@@ -281,7 +333,7 @@ class PlayitTunnelProvider : TunnelProvider {
             }
 
             TunnelResult.Failure(
-                errorMessage = "Tunnel created! Allocation propagating on Playit.gg network. Tap 'Sync Tunnel' in a moment."
+                errorMessage = "Tunnel created! Allocation propagating on Playit.gg network. Tap 'Sync Live Address' in a moment."
             )
         } catch (e: Exception) {
             Log.e("PlayitTunnelProvider", "Error creating tunnel: ${e.message}", e)
@@ -374,15 +426,31 @@ class PlayitTunnelProvider : TunnelProvider {
         if (host.isBlank() || port <= 0) {
             val alloc = t.optJSONObject("alloc")
             val allocData = alloc?.optJSONObject("data") ?: alloc
-            val assigned = allocData?.optString("assigned_domain")?.ifBlank { allocData.optString("custom_domain") } ?: ""
-            val allocPort = allocData?.optInt("port_start", 0)?.takeIf { it > 0 } ?: allocData?.optInt("port", 0) ?: 0
-            if (assigned.isNotBlank()) host = assigned.trim()
-            if (allocPort > 0) port = allocPort
+            val assigned = allocData?.optString("assigned_domain")
+                ?.ifBlank { allocData.optString("custom_domain") }
+                ?.ifBlank { allocData.optString("assigned_ip") }
+                ?.ifBlank { allocData.optString("ip_hostname") }
+                ?: ""
+            var allocPort = allocData?.optInt("port_start", 0)?.takeIf { it > 0 }
+                ?: allocData?.optInt("port", 0)
+                ?: 0
+            if (allocPort <= 0) {
+                val pObj = allocData?.optJSONObject("port")
+                allocPort = pObj?.optInt("from", 0)?.takeIf { it > 0 }
+                    ?: pObj?.optInt("to", 0)?.takeIf { it > 0 }
+                    ?: 0
+            }
+            if (assigned.isNotBlank() && host.isBlank()) host = assigned.trim()
+            if (allocPort > 0 && port <= 0) port = allocPort
         }
 
-        // 5. Check root assigned_domain / custom_domain / port
+        // 5. Check root assigned_domain / custom_domain / assigned_ip / port
         if (host.isBlank()) {
-            host = t.optString("assigned_domain").ifBlank { t.optString("custom_domain") }.trim()
+            host = t.optString("assigned_domain")
+                .ifBlank { t.optString("custom_domain") }
+                .ifBlank { t.optString("assigned_ip") }
+                .ifBlank { t.optString("ip_hostname") }
+                .trim()
         }
         if (port <= 0) {
             val portObj = t.optJSONObject("port")

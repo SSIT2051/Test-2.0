@@ -280,6 +280,12 @@ fun ConnectionTunnelCard(
                                 fontFamily = FontFamily.Monospace,
                                 color = TextPrimary
                             )
+                            if (playitEndpoints?.bedrockTunnel != null && playitEndpoints.javaTunnel != null && playitEndpoints.bedrockTunnel.port != playitEndpoints.javaTunnel.port) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Bedrock: ${playitEndpoints.bedrockTunnel.host}:${playitEndpoints.bedrockTunnel.port}", fontSize = 10.sp, color = PumpkinOrange, fontFamily = FontFamily.Monospace)
+                                    Text("Java: ${playitEndpoints.javaTunnel.host}:${playitEndpoints.javaTunnel.port}", fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                                }
+                            }
                             Text(
                                 text = "Share this public address with friends outside your home network.",
                                 fontSize = 10.sp,
@@ -629,7 +635,8 @@ fun ConnectionTunnelCard(
                     )
                 }
 
-                // 1. PLAYING ON THIS SAME PHONE (127.0.0.1)
+                // 1. PLAYING ON THIS SAME PHONE
+                val hasWifi = localWifiIp.isNotBlank() && !localWifiIp.startsWith("127.")
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -646,7 +653,7 @@ fun ConnectionTunnelCard(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Playing on this Phone",
+                                    text = "Playing on this Same Phone",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -655,26 +662,16 @@ fun ConnectionTunnelCard(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
-                                        .background(Color(0xFF2E7D32).copy(alpha = 0.3f))
+                                        .background(Color(0xFF29B6F6).copy(alpha = 0.2f))
                                         .padding(horizontal = 5.dp, vertical = 1.dp)
                                 ) {
-                                    Text("Loopback", fontSize = 9.sp, color = Color(0xFF81C784), fontWeight = FontWeight.Bold)
+                                    Text("Same Device", fontSize = 9.sp, color = Color(0xFF81D4FA), fontWeight = FontWeight.Bold)
                                 }
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    clipboard.setText(AnnotatedString("127.0.0.1"))
-                                    Toast.makeText(context, "Copied 127.0.0.1 to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy 127.0.0.1", tint = PumpkinOrange, modifier = Modifier.size(13.dp))
                             }
                         }
 
                         Text(
-                            text = "To play Minecraft on THIS phone, add server IP 127.0.0.1 (Port: $designatedBedrockPort). Do not use your Playit or Wi-Fi IP on the same phone because Android blocks loopback to external IPs.",
+                            text = "ℹ️ Why 127.0.0.1 fails: Android OS blocks Minecraft Bedrock from connecting to loopback (127.0.0.1) between apps. To play on this phone, use your Playit address or phone Wi-Fi/Hotspot IP below:",
                             fontSize = 10.sp,
                             color = TextSecondary,
                             lineHeight = 14.sp
@@ -684,45 +681,64 @@ fun ConnectionTunnelCard(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            val samePhoneBedrockAddr = if (hasRealTunnel) effectivePlayitDomain else if (hasWifi) "$localWifiIp:$designatedBedrockPort" else "127.0.0.1:$designatedBedrockPort"
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(ObsidianSurfaceElevated)
                                     .clickable {
-                                        clipboard.setText(AnnotatedString("127.0.0.1:$designatedBedrockPort"))
-                                        Toast.makeText(context, "Copied 127.0.0.1:$designatedBedrockPort", Toast.LENGTH_SHORT).show()
+                                        clipboard.setText(AnnotatedString(samePhoneBedrockAddr))
+                                        Toast.makeText(context, "Copied address: $samePhoneBedrockAddr", Toast.LENGTH_SHORT).show()
                                     }
                                     .padding(horizontal = 8.dp, vertical = 6.dp)
                             ) {
                                 Column {
-                                    Text("Bedrock", fontSize = 9.sp, color = TextMuted)
-                                    Text("127.0.0.1:$designatedBedrockPort", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                    Text(if (hasRealTunnel) "Bedrock (via Playit)" else "Bedrock (via Wi-Fi)", fontSize = 9.sp, color = PumpkinOrange, fontWeight = FontWeight.Bold)
+                                    Text(samePhoneBedrockAddr, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
                                 }
                             }
 
+                            val samePhoneJavaAddr = if (hasRealTunnel && playitEndpoints?.javaTunnel != null) "${playitEndpoints.javaTunnel.host}:${playitEndpoints.javaTunnel.port}" else if (hasWifi) "$localWifiIp:$designatedJavaPort" else "127.0.0.1:$designatedJavaPort"
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(ObsidianSurfaceElevated)
                                     .clickable {
-                                        clipboard.setText(AnnotatedString("127.0.0.1:$designatedJavaPort"))
-                                        Toast.makeText(context, "Copied 127.0.0.1:$designatedJavaPort", Toast.LENGTH_SHORT).show()
+                                        clipboard.setText(AnnotatedString(samePhoneJavaAddr))
+                                        Toast.makeText(context, "Copied address: $samePhoneJavaAddr", Toast.LENGTH_SHORT).show()
                                     }
                                     .padding(horizontal = 8.dp, vertical = 6.dp)
                             ) {
                                 Column {
-                                    Text("Java", fontSize = 9.sp, color = TextMuted)
-                                    Text("127.0.0.1:$designatedJavaPort", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                    Text(if (hasRealTunnel && playitEndpoints?.javaTunnel != null) "Java (via Playit)" else "Java (via Wi-Fi)", fontSize = 9.sp, color = TextMuted, fontWeight = FontWeight.Bold)
+                                    Text(samePhoneJavaAddr, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
                                 }
                             }
+                        }
+
+                        // LAN Games tab hint
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF2E7D32).copy(alpha = 0.2f))
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.HelpOutline, contentDescription = null, tint = Color(0xFF81C784), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Tip: You can also open Minecraft -> 'Friends' tab -> LAN Games to connect directly with 1 tap!",
+                                fontSize = 9.5.sp,
+                                color = Color(0xFFC8E6C9)
+                            )
                         }
                     }
                 }
 
                 // 2. FRIENDS ON SAME WI-FI / HOTSPOT (LAN)
-                val hasWifi = localWifiIp.isNotBlank() && !localWifiIp.startsWith("127.")
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

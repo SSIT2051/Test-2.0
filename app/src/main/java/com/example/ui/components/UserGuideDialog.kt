@@ -155,6 +155,11 @@ fun UserGuideDialog(
                         subtitle = "Geyser Bedrock Crossplay Bridge",
                         description = "Enable Crossplay under Settings to allow friends playing on Android, iOS, Xbox, PlayStation, and Nintendo Switch (Minecraft Bedrock Edition) to join your Java PumpkinMC world seamlessly.",
                         tip = "Bedrock players connect using the standard Bedrock port (default 19132)."
+                    ),
+                    GuideTopic(
+                        subtitle = "Playing on This Same Phone & Agent Name",
+                        description = "Android OS blocks Minecraft Bedrock from connecting to 127.0.0.1 (loopback) between separate apps. To play on this same phone, use your Playit address (e.g. xyz.ply.gg:port), your phone's Wi-Fi IP, or join via Minecraft's 'Friends' tab! Also, on Playit.gg you can enter any Agent Name you want—it has no effect on connection.",
+                        tip = "Both Bedrock UDP (19132) and Java TCP (25565) tunnels are automatically created for you."
                     )
                 )
             ),

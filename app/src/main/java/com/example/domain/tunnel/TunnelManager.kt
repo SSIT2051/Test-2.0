@@ -71,6 +71,15 @@ class TunnelManager(
         return playitProvider.getDiscoveredEndpoints()
     }
 
+    suspend fun autoProvisionPlayitTunnels(
+        serverName: String = "PumpkinMC Server",
+        bedrockPort: Int = 19132,
+        javaPort: Int = 25565
+    ): com.example.domain.tunnel.playit.PlayitEndpoints {
+        playitProvider.initialize(context)
+        return playitProvider.autoProvisionBothTunnels(serverName, bedrockPort, javaPort)
+    }
+
     fun registerProvider(provider: TunnelProvider) {
         providers[provider.providerId] = provider
     }

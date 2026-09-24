@@ -139,10 +139,16 @@ fun DashboardScreen(
     var draftServer by remember(server.id) { mutableStateOf(server) }
     var showUserGuide by remember { mutableStateOf(false) }
 
-    LaunchedEffect(server) {
-        if (draftServer.id != server.id) {
-            draftServer = server
-        }
+    LaunchedEffect(server.id) {
+        draftServer = server
+    }
+
+    LaunchedEffect(server.playitDomain, server.playitPort, server.status) {
+        draftServer = draftServer.copy(
+            playitDomain = server.playitDomain,
+            playitPort = server.playitPort,
+            status = server.status
+        )
     }
 
     val isDirty = draftServer.name != server.name ||

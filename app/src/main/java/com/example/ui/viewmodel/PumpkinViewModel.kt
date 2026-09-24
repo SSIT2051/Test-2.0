@@ -39,7 +39,9 @@ data class PlayitClaimUiState(
     val isPolling: Boolean = false,
     val isLinked: Boolean = false,
     val statusMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val assignedBedrockAddress: String? = null,
+    val assignedJavaAddress: String? = null
 )
 
 class PumpkinViewModel(application: Application) : AndroidViewModel(application) {
@@ -644,10 +646,10 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
                     _claimUiState.value = _claimUiState.value.copy(
                         isPolling = false,
                         isLinked = true,
-                        statusMessage = "Successfully connected to Playit.gg!"
+                        statusMessage = "Linked! Discovering live public address..."
                     )
                     _playitAccountLinked.value = true
-                    retryProvisionTunnel()
+                    autoProvisionAndSyncPlayitTunnels()
                     break
                 }
 
@@ -669,9 +671,10 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             _playitAccountLinked.value = true
             _claimUiState.value = _claimUiState.value.copy(
                 isLinked = true,
-                isPolling = false
+                isPolling = false,
+                statusMessage = "Secret key saved! Setting up tunnels..."
             )
-            retryProvisionTunnel()
+            autoProvisionAndSyncPlayitTunnels()
         }
     }
 
@@ -684,6 +687,7 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             tunnelManager.clearPlayitAccount()
             _playitAccountLinked.value = false
             _claimUrl.value = null
+            _playitEndpoints.value = com.example.domain.tunnel.playit.PlayitEndpoints(null, null)
             val server = activeServer.value
             if (server != null) {
                 updateServerConfig(server.copy(playitDomain = ""))
@@ -692,18 +696,39 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun retryProvisionTunnel() {
-        val server = activeServer.value ?: return
-        viewModelScope.launch {
-            val endpoints = tunnelManager.getPlayitEndpoints()
-            _playitEndpoints.value = endpoints
-            val activeEndpoint = if (server.bedrockCrossplayEnabled) endpoints.bedrockTunnel ?: endpoints.javaTunnel else endpoints.javaTunnel ?: endpoints.bedrockTunnel
+        autoProvisionAndSyncPlayitTunnels()
+    }
 
-            if (activeEndpoint != null) {
-                val fullDomain = "${activeEndpoint.host}:${activeEndpoint.port}"
-                updateServerConfig(server.copy(
-                    playitDomain = fullDomain,
-                    playitPort = activeEndpoint.port
-                ))
+    fun autoProvisionAndSyncPlayitTunnels() {
+        viewModelScope.launch {
+            val server = activeServer.value ?: servers.value.firstOrNull() ?: return@launch
+            _claimUiState.value = _claimUiState.value.copy(
+                statusMessage = "Querying and provisioning Playit tunnels..."
+            )
+            val endpoints = tunnelManager.autoProvisionPlayitTunnels(
+                serverName = server.name,
+                bedrockPort = server.bedrockPort,
+                javaPort = server.port
+            )
+            _playitEndpoints.value = endpoints
+
+            val bedrockAddr = endpoints.bedrockTunnel?.let { "${it.host}:${it.port}" }
+            val javaAddr = endpoints.javaTunnel?.let { "${it.host}:${it.port}" }
+            val primaryAddr = if (server.bedrockCrossplayEnabled) bedrockAddr ?: javaAddr else javaAddr ?: bedrockAddr
+
+            if (!primaryAddr.isNullOrBlank()) {
+                val assignedPort = if (server.bedrockCrossplayEnabled) endpoints.bedrockTunnel?.port ?: endpoints.javaTunnel?.port ?: 19132 else endpoints.javaTunnel?.port ?: endpoints.bedrockTunnel?.port ?: 25565
+                // Persist domain directly to active server and all servers in database
+                val all = servers.value
+                for (s in all) {
+                    val updated = s.copy(
+                        playitDomain = primaryAddr,
+                        playitPort = assignedPort,
+                        playitEnabled = true
+                    )
+                    repository.saveServer(updated)
+                }
+
                 if (server.status == ServerStatus.RUNNING) {
                     PumpkinServerService.start(
                         context = getApplication(),
@@ -711,31 +736,18 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
                         bedrockPort = server.bedrockPort,
                         javaPort = server.port,
                         localIp = repository.getLocalDeviceIp(),
-                        publicAddress = fullDomain
+                        publicAddress = primaryAddr
                     )
                 }
-            } else {
-                val tunnel = tunnelManager.createAndStartTunnel(server, "playit")
-                if (tunnel.publicHost.isNotBlank()) {
-                    val fullDomain = "${tunnel.publicHost}:${tunnel.publicPort}"
-                    updateServerConfig(server.copy(
-                        playitDomain = fullDomain,
-                        playitPort = tunnel.publicPort
-                    ))
-                    val updatedEndpoints = tunnelManager.getPlayitEndpoints()
-                    _playitEndpoints.value = updatedEndpoints
-                    if (server.status == ServerStatus.RUNNING) {
-                        PumpkinServerService.start(
-                            context = getApplication(),
-                            serverName = server.name,
-                            bedrockPort = server.bedrockPort,
-                            javaPort = server.port,
-                            localIp = repository.getLocalDeviceIp(),
-                            publicAddress = fullDomain
-                        )
-                    }
-                }
             }
+
+            _claimUiState.value = _claimUiState.value.copy(
+                isLinked = true,
+                isPolling = false,
+                statusMessage = "Public Playit tunnels live and ready!",
+                assignedBedrockAddress = bedrockAddr,
+                assignedJavaAddress = javaAddr
+            )
         }
     }
 }

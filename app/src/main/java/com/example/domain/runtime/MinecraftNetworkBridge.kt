@@ -457,10 +457,9 @@ class MinecraftNetworkBridge(
             val javaLanBytes = javaLanMessage.toByteArray(StandardCharsets.UTF_8)
             val javaPacket = DatagramPacket(javaLanBytes, javaLanBytes.size, javaGroup, 4445)
 
-            val bedrockBroadcastAddr = InetAddress.getByName("255.255.255.255")
             val motd = config.name.replace(";", "")
             val subMotd = "PumpkinMC Host"
-            val bedrockPong = "MCPE;§6$motd§r;766;1.21.40;0;${config.maxPlayers};2;$subMotd;Survival;1;${config.bedrockPort};${config.bedrockPort};"
+            val bedrockPong = "MCPE;§6$motd§r;766;1.21.50;0;${config.maxPlayers};2;$subMotd;Survival;1;${config.bedrockPort};${config.bedrockPort};"
             val bedrockPongBytes = bedrockPong.toByteArray(StandardCharsets.UTF_8)
             val bedrockBuffer = ByteBuffer.allocate(1 + 8 + 8 + 16 + 2 + bedrockPongBytes.size).apply {
                 put(0x1c.toByte())
@@ -470,13 +469,36 @@ class MinecraftNetworkBridge(
                 putShort(bedrockPongBytes.size.toShort())
                 put(bedrockPongBytes)
             }.array()
-            val bedrockPacket = DatagramPacket(bedrockBuffer, bedrockBuffer.size, bedrockBroadcastAddr, 19132)
 
             while (javaSocketJob?.isActive == true || bedrockSocketJob?.isActive == true) {
                 try {
                     broadcastSocket.send(javaPacket)
+
                     if (config.bedrockCrossplayEnabled) {
-                        broadcastSocket.send(bedrockPacket)
+                        // Gather broadcast addresses for all active interfaces plus loopback and global broadcast
+                        val targets = mutableSetOf<InetAddress>()
+                        try { targets.add(InetAddress.getByName("255.255.255.255")) } catch (_: Exception) {}
+                        try { targets.add(InetAddress.getByName("127.0.0.1")) } catch (_: Exception) {}
+                        try {
+                            val ifaces = java.net.NetworkInterface.getNetworkInterfaces()
+                            while (ifaces != null && ifaces.hasMoreElements()) {
+                                val iface = ifaces.nextElement()
+                                val list = iface.interfaceAddresses ?: continue
+                                for (addr in list) {
+                                    val bCast = addr.broadcast
+                                    if (bCast != null) targets.add(bCast)
+                                }
+                            }
+                        } catch (_: Exception) {}
+
+                        for (target in targets) {
+                            try {
+                                broadcastSocket.send(DatagramPacket(bedrockBuffer, bedrockBuffer.size, target, 19132))
+                                if (config.bedrockPort != 19132) {
+                                    broadcastSocket.send(DatagramPacket(bedrockBuffer, bedrockBuffer.size, target, config.bedrockPort))
+                                }
+                            } catch (_: Exception) {}
+                        }
                     }
                 } catch (_: Exception) {}
 

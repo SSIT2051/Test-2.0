@@ -192,46 +192,125 @@ fun PlayitClaimDialog(
                         }
                     }
                 } else if (state.isLinked) {
-                    // Success / Linked State
+                    // Success / Linked State with Real Assigned IP Display
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(24.dp),
+                            .padding(20.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = null,
                                 tint = Color(0xFF4CAF50),
-                                modifier = Modifier.size(56.dp)
+                                modifier = Modifier.size(48.dp)
                             )
                             Text(
-                                text = "Account Successfully Linked!",
+                                text = "Playit Public IP Assigned!",
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Your Playit.gg Agent is now authorized. Public tunnel endpoints are active and routing players.",
-                                fontSize = 13.sp,
+                                text = "Your Playit.gg Agent is authorized and public addresses have been automatically assigned:",
+                                fontSize = 12.sp,
                                 color = TextSecondary,
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                lineHeight = 18.sp
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Bedrock Address Card
+                            val bedAddr = state.assignedBedrockAddress ?: "Allocating Bedrock address..."
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ObsidianSurfaceElevated)
+                                    .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("BEDROCK PUBLIC ADDRESS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PumpkinOrange)
+                                        Text(
+                                            text = bedAddr,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = TextPrimary
+                                        )
+                                    }
+                                    if (state.assignedBedrockAddress != null) {
+                                        IconButton(
+                                            onClick = {
+                                                clipboard.setText(AnnotatedString(bedAddr))
+                                                Toast.makeText(context, "Copied Bedrock address: $bedAddr", Toast.LENGTH_SHORT).show()
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = PumpkinOrange, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Java Address Card
+                            val javaAddr = state.assignedJavaAddress ?: "Allocating Java address..."
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ObsidianSurfaceElevated)
+                                    .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("JAVA PUBLIC ADDRESS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextMuted)
+                                        Text(
+                                            text = javaAddr,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = TextPrimary
+                                        )
+                                    }
+                                    if (state.assignedJavaAddress != null) {
+                                        IconButton(
+                                            onClick = {
+                                                clipboard.setText(AnnotatedString(javaAddr))
+                                                Toast.makeText(context, "Copied Java address: $javaAddr", Toast.LENGTH_SHORT).show()
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
                             Button(
                                 onClick = onDismiss,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = PumpkinOrange,
                                     contentColor = Color.Black
                                 ),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(42.dp)
                             ) {
-                                Text("Done", fontWeight = FontWeight.Bold)
+                                Text("Done & View Dashboard", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -395,6 +474,28 @@ fun PlayitClaimDialog(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
+                        }
+
+                        // Agent Name Clarification Banner
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E3A2F))
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Agent Name: You can type ANY name on Playit.gg (e.g. 'My Server'). It does NOT affect your IP.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFA5D6A7)
+                            )
                         }
 
                         // Embedded In-App WebView

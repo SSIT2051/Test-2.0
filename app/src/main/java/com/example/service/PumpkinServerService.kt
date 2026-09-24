@@ -19,6 +19,7 @@ class PumpkinServerService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     companion object {
         const val ACTION_START = "com.example.service.ACTION_START"
@@ -157,6 +158,14 @@ class PumpkinServerService : Service() {
                 acquire()
             }
         }
+
+        if (multicastLock?.isHeld != true) {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            multicastLock = wifiManager?.createMulticastLock("PumpkinMCHost::MulticastLock")?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
     }
 
     private fun releaseLocks() {
@@ -173,6 +182,13 @@ class PumpkinServerService : Service() {
             }
         } catch (_: Exception) {}
         wifiLock = null
+
+        try {
+            if (multicastLock?.isHeld == true) {
+                multicastLock?.release()
+            }
+        } catch (_: Exception) {}
+        multicastLock = null
     }
 
     private fun createNotificationChannel() {
