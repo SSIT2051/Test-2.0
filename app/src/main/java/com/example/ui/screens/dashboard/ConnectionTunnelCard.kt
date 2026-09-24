@@ -70,6 +70,7 @@ fun ConnectionTunnelCard(
     localWifiIp: String,
     isClaimLoading: Boolean = false,
     isAccountLinked: Boolean = false,
+    playitEndpoints: com.example.domain.tunnel.playit.PlayitEndpoints? = null,
     onRequestClaim: ((String) -> Unit) -> Unit = {},
     onUnlinkAccount: () -> Unit = {},
     onRetryTunnel: () -> Unit = {},
@@ -86,14 +87,23 @@ fun ConnectionTunnelCard(
 
     val designatedBedrockPort = draftServer.bedrockPort
     val designatedJavaPort = draftServer.port
-    val localAddress = if (localWifiIp.isNotBlank()) localWifiIp else "127.0.0.1"
+    val localAddress = if (localWifiIp.isNotBlank() && !localWifiIp.startsWith("127.")) localWifiIp else "127.0.0.1"
 
     val isCustom = draftServer.customTunnelEnabled
-    val hasRealTunnel = draftServer.playitDomain.isNotBlank() && draftServer.playitDomain.contains(".")
+    val effectivePlayitDomain = if (draftServer.playitDomain.isNotBlank() && draftServer.playitDomain.contains(".")) {
+        draftServer.playitDomain
+    } else {
+        val bed = playitEndpoints?.bedrockTunnel
+        val jav = playitEndpoints?.javaTunnel
+        if (bed != null) "${bed.host}:${bed.port}"
+        else if (jav != null) "${jav.host}:${jav.port}"
+        else ""
+    }
+    val hasRealTunnel = effectivePlayitDomain.isNotBlank()
     val currentHost = if (isCustom && draftServer.customTunnelAddress.isNotBlank()) {
         draftServer.customTunnelAddress.trim()
     } else if (hasRealTunnel) {
-        draftServer.playitDomain
+        effectivePlayitDomain
     } else {
         "$localAddress:$designatedBedrockPort"
     }
@@ -234,8 +244,8 @@ fun ConnectionTunnelCard(
                                 Spacer(modifier = Modifier.width(7.dp))
                                 Text(
                                     text = if (hasRealTunnel) "Public Tunnel: Online"
-                                    else if (isAccountLinked) "Playit Account: Linked"
-                                    else "Playit Account: Claim Required",
+                                    else if (isAccountLinked) "Playit Account: Linked (Ready)"
+                                    else "Playit Account: Setup Required",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (hasRealTunnel) Color(0xFF4CAF50)
@@ -247,8 +257,8 @@ fun ConnectionTunnelCard(
                             if (hasRealTunnel) {
                                 IconButton(
                                     onClick = {
-                                        clipboard.setText(AnnotatedString(draftServer.playitDomain))
-                                        Toast.makeText(context, "Public address copied: ${draftServer.playitDomain}", Toast.LENGTH_SHORT).show()
+                                        clipboard.setText(AnnotatedString(effectivePlayitDomain))
+                                        Toast.makeText(context, "Public address copied: $effectivePlayitDomain", Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.size(28.dp)
                                 ) {
@@ -264,16 +274,21 @@ fun ConnectionTunnelCard(
 
                         if (hasRealTunnel) {
                             Text(
-                                text = draftServer.playitDomain,
-                                fontSize = 12.sp,
+                                text = effectivePlayitDomain,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = TextPrimary
                             )
+                            Text(
+                                text = "Share this public address with friends outside your home network.",
+                                fontSize = 10.sp,
+                                color = TextMuted
+                            )
                         } else {
                             Text(
-                                text = if (isAccountLinked) "Tunnel is ready. Start server to allocate live connection."
-                                else "Claim account to allow friends outside local network to join over internet.",
+                                text = if (isAccountLinked) "Account linked! Tap 'Sync Live Address' below to retrieve your live public IP from Playit.gg."
+                                else "Link your Playit account to get a free permanent public IP for online multiplayer.",
                                 fontSize = 10.sp,
                                 color = TextMuted
                             )
@@ -302,7 +317,7 @@ fun ConnectionTunnelCard(
                             } else {
                                 Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Claim Playit Account (In-App Web)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Connect Playit Account (In-App Web)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     } else {
@@ -313,17 +328,31 @@ fun ConnectionTunnelCard(
                             Button(
                                 onClick = { onRetryTunnel() },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = ObsidianSurface,
-                                    contentColor = TextPrimary
+                                    containerColor = if (!hasRealTunnel) PumpkinOrange else ObsidianSurface,
+                                    contentColor = if (!hasRealTunnel) Color.Black else TextPrimary
                                 ),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(34.dp)
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = PumpkinOrange, modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = if (!hasRealTunnel) Color.Black else PumpkinOrange, modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Sync / Reconnect", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(if (!hasRealTunnel) "Sync Live Address" else "Sync / Reconnect", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://playit.gg/manage/agents"))
+                                    context.startActivity(intent)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Web", fontSize = 11.sp)
                             }
 
                             OutlinedButton(
@@ -569,126 +598,216 @@ fun ConnectionTunnelCard(
                 }
             }
 
-            // IN THE BOTTOM: LOCAL IP PART (Simple, Clean, No WiFi Icon, No Emojis)
+            // LOCAL & SAME-DEVICE PLAY
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
                     .background(ObsidianSurfaceElevated)
                     .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Local IP status bar
+                // Section Title
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(if (isRunning) Color(0xFF4CAF50) else Color(0xFF888888))
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isRunning) "Local IP (LAN): Running" else "Local IP (LAN): Stopped",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isRunning) Color(0xFF4CAF50) else TextMuted
-                        )
-                    }
+                    Text(
+                        text = "LOCAL & SAME-DEVICE PLAY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextMuted,
+                        letterSpacing = 0.5.sp
+                    )
 
                     Text(
-                        text = localAddress,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = TextSecondary,
-                        modifier = Modifier.clickable {
-                            clipboard.setText(AnnotatedString(localAddress))
-                            Toast.makeText(context, "IP copied: $localAddress", Toast.LENGTH_SHORT).show()
-                        }
+                        text = if (isRunning) "Server: Online" else "Server: Stopped",
+                        fontSize = 10.sp,
+                        color = if (isRunning) Color(0xFF4CAF50) else TextMuted
                     )
                 }
 
-                // Two clean direct addresses
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // 1. PLAYING ON THIS SAME PHONE (127.0.0.1)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ObsidianSurface)
+                        .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
+                        .padding(10.dp)
                 ) {
-                    val bedrockLan = "$localAddress:$designatedBedrockPort"
-                    val javaLan = "$localAddress:$designatedJavaPort"
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ObsidianSurface)
-                            .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(6.dp))
-                            .clickable {
-                                clipboard.setText(AnnotatedString(bedrockLan))
-                                Toast.makeText(context, "Bedrock copied: $bedrockLan", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text("Bedrock", fontSize = 9.sp, color = TextMuted)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = bedrockLan,
+                                    text = "Playing on this Phone",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
                                     color = TextPrimary
                                 )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF2E7D32).copy(alpha = 0.3f))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                ) {
+                                    Text("Loopback", fontSize = 9.sp, color = Color(0xFF81C784), fontWeight = FontWeight.Bold)
+                                }
                             }
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy Bedrock LAN",
-                                tint = PumpkinOrange,
-                                modifier = Modifier.size(13.dp)
-                            )
+
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString("127.0.0.1"))
+                                    Toast.makeText(context, "Copied 127.0.0.1 to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy 127.0.0.1", tint = PumpkinOrange, modifier = Modifier.size(13.dp))
+                            }
+                        }
+
+                        Text(
+                            text = "To play Minecraft on THIS phone, add server IP 127.0.0.1 (Port: $designatedBedrockPort). Do not use your Playit or Wi-Fi IP on the same phone because Android blocks loopback to external IPs.",
+                            fontSize = 10.sp,
+                            color = TextSecondary,
+                            lineHeight = 14.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(ObsidianSurfaceElevated)
+                                    .clickable {
+                                        clipboard.setText(AnnotatedString("127.0.0.1:$designatedBedrockPort"))
+                                        Toast.makeText(context, "Copied 127.0.0.1:$designatedBedrockPort", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Column {
+                                    Text("Bedrock", fontSize = 9.sp, color = TextMuted)
+                                    Text("127.0.0.1:$designatedBedrockPort", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(ObsidianSurfaceElevated)
+                                    .clickable {
+                                        clipboard.setText(AnnotatedString("127.0.0.1:$designatedJavaPort"))
+                                        Toast.makeText(context, "Copied 127.0.0.1:$designatedJavaPort", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Column {
+                                    Text("Java", fontSize = 9.sp, color = TextMuted)
+                                    Text("127.0.0.1:$designatedJavaPort", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                }
+                            }
                         }
                     }
+                }
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ObsidianSurface)
-                            .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(6.dp))
-                            .clickable {
-                                clipboard.setText(AnnotatedString(javaLan))
-                                Toast.makeText(context, "Java copied: $javaLan", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
+                // 2. FRIENDS ON SAME WI-FI / HOTSPOT (LAN)
+                val hasWifi = localWifiIp.isNotBlank() && !localWifiIp.startsWith("127.")
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ObsidianSurface)
+                        .border(1.dp, ObsidianSurfaceBorder, RoundedCornerShape(8.dp))
+                        .padding(10.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text("Java", fontSize = 9.sp, color = TextMuted)
-                                Text(
-                                    text = javaLan,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = TextPrimary
-                                )
+                            Text(
+                                text = "Friends on Same Wi-Fi / Hotspot",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+
+                            if (hasWifi) {
+                                IconButton(
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(localWifiIp))
+                                        Toast.makeText(context, "Copied $localWifiIp to clipboard", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Wi-Fi IP", tint = PumpkinOrange, modifier = Modifier.size(13.dp))
+                                }
                             }
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy Java LAN",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(13.dp)
+                        }
+
+                        if (hasWifi) {
+                            Text(
+                                text = "Give this IP to friends or consoles connected to your home Wi-Fi or phone hotspot:",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(ObsidianSurfaceElevated)
+                                        .clickable {
+                                            clipboard.setText(AnnotatedString("$localWifiIp:$designatedBedrockPort"))
+                                            Toast.makeText(context, "Copied $localWifiIp:$designatedBedrockPort", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Column {
+                                        Text("Bedrock (LAN)", fontSize = 9.sp, color = TextMuted)
+                                        Text("$localWifiIp:$designatedBedrockPort", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(ObsidianSurfaceElevated)
+                                        .clickable {
+                                            clipboard.setText(AnnotatedString("$localWifiIp:$designatedJavaPort"))
+                                            Toast.makeText(context, "Copied $localWifiIp:$designatedJavaPort", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Column {
+                                        Text("Java (LAN)", fontSize = 9.sp, color = TextMuted)
+                                        Text("$localWifiIp:$designatedJavaPort", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "No active Wi-Fi or Mobile Hotspot found. To play with nearby friends without internet, connect to Wi-Fi or turn on your phone's Hotspot.",
+                                fontSize = 10.sp,
+                                color = TextMuted,
+                                lineHeight = 14.sp
                             )
                         }
                     }

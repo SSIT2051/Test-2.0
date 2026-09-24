@@ -193,6 +193,38 @@ class PlayitTunnelProvider : TunnelProvider {
             }
 
             // 2. Request creation of new tunnel with proper origin structure
+            // Try v1 schema first
+            val v1Json = JSONObject().apply {
+                put("name", serverName.take(30))
+                put("protocol", JSONObject().apply {
+                    put("type", "tunnel-type")
+                    put("details", tunnelType)
+                })
+                put("origin", JSONObject().apply {
+                    put("type", "agent")
+                    put("data", JSONObject().apply {
+                        if (agentId.isNotBlank()) put("agent_id", agentId)
+                        put("config", JSONObject().apply {
+                            put("local_port", localPort)
+                        })
+                    })
+                })
+                put("endpoint", JSONObject().apply {
+                    put("type", "region")
+                    put("details", JSONObject().apply {
+                        put("region", "global")
+                    })
+                })
+                put("enabled", true)
+            }
+            try {
+                val v1Resp = api.createV1TunnelRaw(authHeader, v1Json.toString().toRequestBody(jsonMedia))
+                Log.d("PlayitTunnelProvider", "v1/tunnels/create HTTP: ${v1Resp.code()}")
+            } catch (e: Exception) {
+                Log.w("PlayitTunnelProvider", "v1 create tunnel attempt: ${e.message}")
+            }
+
+            // Also try standard schema
             val originObj = JSONObject().apply {
                 put("type", "agent")
                 put("data", JSONObject().apply {
@@ -213,12 +245,16 @@ class PlayitTunnelProvider : TunnelProvider {
                 put("enabled", true)
             }
             val createBody = createJson.toString().toRequestBody(jsonMedia)
-            val createResp = api.createTunnelRaw(authHeader, createBody)
-            val createStr = createResp.body()?.string() ?: createResp.errorBody()?.string() ?: ""
-            Log.d("PlayitTunnelProvider", "tunnels/create result: $createStr")
+            try {
+                val createResp = api.createTunnelRaw(authHeader, createBody)
+                val createStr = createResp.body()?.string() ?: createResp.errorBody()?.string() ?: ""
+                Log.d("PlayitTunnelProvider", "tunnels/create result: $createStr")
+            } catch (e: Exception) {
+                Log.w("PlayitTunnelProvider", "legacy create tunnel attempt: ${e.message}")
+            }
 
             // 3. Poll for assigned public address & port
-            for (attempt in 1..6) {
+            for (attempt in 1..8) {
                 delay(1000)
                 val allocated = fetchAgentRunData(authHeader)?.tunnels?.find { matchesProtocol(it.proto, protocol) }
                     ?: fetchTunnelsList(authHeader).find { matchesProtocol(it.proto, protocol) }
@@ -267,29 +303,138 @@ class PlayitTunnelProvider : TunnelProvider {
         }
     }
 
+    private fun parsePlayitTunnelJson(t: JSONObject): PlayitDiscoveredTunnel? {
+        val id = t.optString("id")
+        var proto = t.optString("port_type").ifBlank { t.optString("proto") }
+        val tunnelType = t.optString("tunnel_type")
+        if (proto.isBlank()) {
+            proto = when {
+                tunnelType.contains("bedrock", ignoreCase = true) -> "udp"
+                tunnelType.contains("java", ignoreCase = true) -> "tcp"
+                else -> "both"
+            }
+        }
+
+        var host = ""
+        var port = 0
+
+        // 1. Check display_address (e.g. "subdomain.ply.gg:12345" or "147.185.221.16:12345")
+        val displayAddress = t.optString("display_address").trim()
+        if (displayAddress.contains(":")) {
+            val parts = displayAddress.split(":")
+            host = parts[0].trim()
+            port = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        }
+
+        // 2. Check public_allocations
+        if (host.isBlank() || port <= 0) {
+            val publicAllocArr = t.optJSONArray("public_allocations")
+            if (publicAllocArr != null && publicAllocArr.length() > 0) {
+                for (j in 0 until publicAllocArr.length()) {
+                    val allocItem = publicAllocArr.optJSONObject(j) ?: continue
+                    val details = allocItem.optJSONObject("details") ?: allocItem
+                    val ipHostname = details.optString("ip_hostname")
+                    val autoDomain = details.optString("auto_domain")
+                    val ip = details.optString("ip")
+                    val allocPort = details.optInt("port", 0).takeIf { it > 0 } ?: details.optInt("port_start", 0)
+                    val candidateHost = ipHostname.ifBlank { autoDomain.ifBlank { ip } }
+                    if (candidateHost.isNotBlank() && allocPort > 0) {
+                        host = candidateHost
+                        port = allocPort
+                        val allocProto = details.optString("port_type")
+                        if (allocProto.isNotBlank()) proto = allocProto
+                        break
+                    }
+                }
+            }
+        }
+
+        // 3. Check connect_addresses
+        if (host.isBlank() || port <= 0) {
+            val connectArr = t.optJSONArray("connect_addresses")
+            if (connectArr != null && connectArr.length() > 0) {
+                for (j in 0 until connectArr.length()) {
+                    val conn = connectArr.optJSONObject(j) ?: continue
+                    val valObj = conn.optJSONObject("value")
+                    val addr = valObj?.optString("address") ?: conn.optString("address")
+                    val domain = valObj?.optString("domain") ?: conn.optString("domain")
+                    if (addr.isNotBlank() && addr.contains(":")) {
+                        val parts = addr.split(":")
+                        if (host.isBlank()) host = parts[0].trim()
+                        if (port <= 0) port = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    }
+                    if (domain.isNotBlank()) {
+                        host = domain.trim()
+                    }
+                }
+            }
+        }
+
+        // 4. Check alloc.data or alloc
+        if (host.isBlank() || port <= 0) {
+            val alloc = t.optJSONObject("alloc")
+            val allocData = alloc?.optJSONObject("data") ?: alloc
+            val assigned = allocData?.optString("assigned_domain")?.ifBlank { allocData.optString("custom_domain") } ?: ""
+            val allocPort = allocData?.optInt("port_start", 0)?.takeIf { it > 0 } ?: allocData?.optInt("port", 0) ?: 0
+            if (assigned.isNotBlank()) host = assigned.trim()
+            if (allocPort > 0) port = allocPort
+        }
+
+        // 5. Check root assigned_domain / custom_domain / port
+        if (host.isBlank()) {
+            host = t.optString("assigned_domain").ifBlank { t.optString("custom_domain") }.trim()
+        }
+        if (port <= 0) {
+            val portObj = t.optJSONObject("port")
+            port = portObj?.optInt("from", 0)?.takeIf { it > 0 }
+                ?: portObj?.optInt("to", 0)?.takeIf { it > 0 }
+                ?: t.optInt("port", 0)
+        }
+
+        if (host.isNotBlank() && port > 0) {
+            return PlayitDiscoveredTunnel(
+                id = id.ifBlank { host },
+                host = host,
+                port = port,
+                proto = proto
+            )
+        }
+        return null
+    }
+
     private suspend fun fetchAgentRunData(authHeader: String): PlayitRunDataResult? {
         try {
             val jsonMedia = "application/json".toMediaTypeOrNull()
             val emptyBody = "{}".toRequestBody(jsonMedia)
-            val resp = api.getAgentRunData(authHeader, emptyBody)
-            val bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+
+            var bodyStr = ""
+            try {
+                val v1Resp = api.getV1AgentRunData(authHeader, emptyBody)
+                if (v1Resp.isSuccessful) {
+                    bodyStr = v1Resp.body()?.string() ?: ""
+                }
+            } catch (_: Exception) {}
+
+            if (bodyStr.isBlank()) {
+                val resp = api.getAgentRunData(authHeader, emptyBody)
+                bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+            }
             if (bodyStr.isBlank()) return null
+
             val json = JSONObject(bodyStr)
-            if (json.optString("status") != "success") return null
-            val dataObj = json.optJSONObject("data") ?: return null
+            val dataObj = json.optJSONObject("data") ?: json
             val agentId = dataObj.optString("agent_id")
-            val tunnelsArr = dataObj.optJSONArray("tunnels") ?: JSONArray()
+            val tunnelsArr = dataObj.optJSONArray("tunnels")
+                ?: json.optJSONArray("tunnels")
+                ?: json.optJSONArray("data")
+                ?: JSONArray()
             val tunnels = mutableListOf<PlayitDiscoveredTunnel>()
 
             for (i in 0 until tunnelsArr.length()) {
                 val t = tunnelsArr.optJSONObject(i) ?: continue
-                val id = t.optString("id")
-                val assignedDomain = t.optString("assigned_domain").ifBlank { t.optString("custom_domain") }
-                val portObj = t.optJSONObject("port")
-                val port = portObj?.optInt("from") ?: portObj?.optInt("to") ?: t.optInt("port", 0)
-                val proto = t.optString("proto")
-                if (assignedDomain.isNotBlank() && port > 0) {
-                    tunnels.add(PlayitDiscoveredTunnel(id = id, host = assignedDomain, port = port, proto = proto))
+                val tunnel = parsePlayitTunnelJson(t)
+                if (tunnel != null) {
+                    tunnels.add(tunnel)
                 }
             }
             return PlayitRunDataResult(agentId, tunnels)
@@ -303,25 +448,34 @@ class PlayitTunnelProvider : TunnelProvider {
         try {
             val jsonMedia = "application/json".toMediaTypeOrNull()
             val emptyBody = "{}".toRequestBody(jsonMedia)
-            val resp = api.listTunnelsRaw(authHeader, emptyBody)
-            val bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+
+            var bodyStr = ""
+            try {
+                val v1Resp = api.listV1TunnelsRaw(authHeader, emptyBody)
+                if (v1Resp.isSuccessful) {
+                    bodyStr = v1Resp.body()?.string() ?: ""
+                }
+            } catch (_: Exception) {}
+
+            if (bodyStr.isBlank()) {
+                val resp = api.listTunnelsRaw(authHeader, emptyBody)
+                bodyStr = resp.body()?.string() ?: resp.errorBody()?.string() ?: ""
+            }
             if (bodyStr.isBlank()) return emptyList()
+
             val json = JSONObject(bodyStr)
-            if (json.optString("status") != "success") return emptyList()
-            val dataObj = json.optJSONObject("data") ?: return emptyList()
-            val tunnelsArr = dataObj.optJSONArray("tunnels") ?: return emptyList()
+            val dataObj = json.optJSONObject("data") ?: json
+            val tunnelsArr = dataObj.optJSONArray("tunnels")
+                ?: json.optJSONArray("tunnels")
+                ?: json.optJSONArray("data")
+                ?: JSONArray()
             val list = mutableListOf<PlayitDiscoveredTunnel>()
 
             for (i in 0 until tunnelsArr.length()) {
                 val t = tunnelsArr.optJSONObject(i) ?: continue
-                val id = t.optString("id")
-                val proto = t.optString("port_type")
-                val alloc = t.optJSONObject("alloc")
-                val allocData = alloc?.optJSONObject("data")
-                val assignedDomain = allocData?.optString("assigned_domain") ?: ""
-                val port = allocData?.optInt("port_start", 0) ?: 0
-                if (assignedDomain.isNotBlank() && port > 0) {
-                    list.add(PlayitDiscoveredTunnel(id = id, host = assignedDomain, port = port, proto = proto))
+                val tunnel = parsePlayitTunnelJson(t)
+                if (tunnel != null) {
+                    list.add(tunnel)
                 }
             }
             return list

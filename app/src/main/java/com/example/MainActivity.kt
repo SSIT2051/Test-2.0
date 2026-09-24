@@ -124,6 +124,7 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
     val hardwareInfo by viewModel.deviceHardwareInfo.collectAsStateWithLifecycle()
     val isClaimLoading by viewModel.isClaimLoading.collectAsStateWithLifecycle()
     val isAccountLinked by viewModel.playitAccountLinked.collectAsStateWithLifecycle()
+    val playitEndpoints by viewModel.playitEndpoints.collectAsStateWithLifecycle()
     val claimUiState by viewModel.claimUiState.collectAsStateWithLifecycle()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -318,6 +319,7 @@ fun PumpkinMCApp(viewModel: PumpkinViewModel) {
                         localWifiIp = viewModel.localWifiIp,
                         isClaimLoading = isClaimLoading,
                         isAccountLinked = isAccountLinked,
+                        playitEndpoints = playitEndpoints,
                         onRequestClaim = { onReady -> viewModel.requestPlayitClaim(onReady) },
                         onUnlinkAccount = { viewModel.unlinkPlayitAccount() },
                         onRetryTunnel = { viewModel.retryProvisionTunnel() },

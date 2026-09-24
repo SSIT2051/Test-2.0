@@ -24,8 +24,20 @@ interface PlayitApiService {
         @Body body: RequestBody
     ): Response<ResponseBody>
 
+    @POST("v1/agents/rundata")
+    suspend fun getV1AgentRunData(
+        @Header("Authorization") authHeader: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
+
     @POST("tunnels/list")
     suspend fun listTunnelsRaw(
+        @Header("Authorization") authHeader: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
+
+    @POST("v1/tunnels/list")
+    suspend fun listV1TunnelsRaw(
         @Header("Authorization") authHeader: String,
         @Body body: RequestBody
     ): Response<ResponseBody>
@@ -36,8 +48,20 @@ interface PlayitApiService {
         @Body body: RequestBody
     ): Response<ResponseBody>
 
+    @POST("v1/tunnels/create")
+    suspend fun createV1TunnelRaw(
+        @Header("Authorization") authHeader: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
+
     @POST("tunnels/delete")
     suspend fun deleteTunnelRaw(
+        @Header("Authorization") authHeader: String,
+        @Body body: RequestBody
+    ): Response<ResponseBody>
+
+    @POST("v1/tunnels/delete")
+    suspend fun deleteV1TunnelRaw(
         @Header("Authorization") authHeader: String,
         @Body body: RequestBody
     ): Response<ResponseBody>

@@ -225,20 +225,62 @@ class PumpkinServerRepository(
     }
 
     // Network Utilities
-    fun getLocalDeviceIp(): String {
+    fun getLocalDeviceIp(context: Context? = null): String {
+        // 1. Try ConnectivityManager if context is available
+        if (context != null) {
+            try {
+                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val activeNetwork = cm?.activeNetwork
+                if (activeNetwork != null) {
+                    val linkProps = cm.getLinkProperties(activeNetwork)
+                    linkProps?.linkAddresses?.forEach { linkAddress ->
+                        val addr = linkAddress.address
+                        if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                            val host = addr.hostAddress
+                            if (!host.isNullOrBlank() && !host.startsWith("127.")) {
+                                return host
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            try {
+                val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                val ipInt = wm?.connectionInfo?.ipAddress ?: 0
+                if (ipInt != 0) {
+                    val ipStr = String.format(
+                        Locale.US,
+                        "%d.%d.%d.%d",
+                        ipInt and 0xff,
+                        ipInt shr 8 and 0xff,
+                        ipInt shr 16 and 0xff,
+                        ipInt shr 24 and 0xff
+                    )
+                    if (ipStr != "0.0.0.0") return ipStr
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Iterate network interfaces safely without calling iface.isUp (prevents SocketException on Android 10+)
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces() ?: return ""
             val candidates = mutableListOf<Pair<String, String>>()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
-                if (iface.isLoopback || !iface.isUp) continue
-                val addresses = iface.inetAddresses
+                val isLoopback = try { iface.isLoopback } catch (_: Exception) { false }
+                if (isLoopback) continue
+
+                val addresses = try { iface.inetAddresses } catch (_: Exception) { null } ?: continue
                 while (addresses.hasMoreElements()) {
                     val addr = addresses.nextElement()
-                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
-                        val host = addr.hostAddress ?: continue
-                        if (!host.startsWith("127.")) {
-                            candidates.add(iface.name.lowercase() to host)
+                    if (addr is Inet4Address) {
+                        val isLoopbackAddr = try { addr.isLoopbackAddress } catch (_: Exception) { false }
+                        if (!isLoopbackAddr) {
+                            val host = addr.hostAddress ?: continue
+                            if (!host.startsWith("127.")) {
+                                candidates.add(iface.name.lowercase() to host)
+                            }
                         }
                     }
                 }

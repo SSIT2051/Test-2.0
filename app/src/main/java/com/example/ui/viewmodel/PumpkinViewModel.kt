@@ -117,7 +117,7 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
 
     // Local IP
     val localWifiIp: String
-        get() = repository.getLocalDeviceIp()
+        get() = repository.getLocalDeviceIp(getApplication<Application>().applicationContext)
 
     // Device Hardware & Resource Tracking
     private val _deviceHardwareInfo = MutableStateFlow(DeviceHardwareDetector.detect(application))
@@ -176,9 +176,39 @@ class PumpkinViewModel(application: Application) : AndroidViewModel(application)
             if (key.isNotBlank()) {
                 val endpoints = tunnelManager.getPlayitEndpoints()
                 _playitEndpoints.value = endpoints
+                val activeTunnel = endpoints.bedrockTunnel ?: endpoints.javaTunnel
+                if (activeTunnel != null) {
+                    val fullDomain = "${activeTunnel.host}:${activeTunnel.port}"
+                    val all = servers.value
+                    for (s in all) {
+                        if (s.playitDomain.isBlank()) {
+                            repository.saveServer(s.copy(playitDomain = fullDomain, playitPort = activeTunnel.port))
+                        }
+                    }
+                }
             }
             // Load and sync official market catalog
             repository.refreshPluginsFromRemote()
+        }
+    }
+
+    fun refreshPlayitStatus() {
+        viewModelScope.launch {
+            val key = tunnelManager.getPlayitSecretKey()
+            _playitAccountLinked.value = key.isNotBlank()
+            if (key.isNotBlank()) {
+                val endpoints = tunnelManager.getPlayitEndpoints()
+                _playitEndpoints.value = endpoints
+                val activeTunnel = endpoints.bedrockTunnel ?: endpoints.javaTunnel
+                val srv = activeServer.value
+                if (srv != null && activeTunnel != null) {
+                    val fullDomain = "${activeTunnel.host}:${activeTunnel.port}"
+                    updateServerConfig(srv.copy(
+                        playitDomain = fullDomain,
+                        playitPort = activeTunnel.port
+                    ))
+                }
+            }
         }
     }
 

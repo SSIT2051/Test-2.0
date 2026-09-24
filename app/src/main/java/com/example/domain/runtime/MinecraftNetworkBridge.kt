@@ -261,11 +261,11 @@ class MinecraftNetworkBridge(
                                 val clientTime = ByteBuffer.wrap(data, 1, 8).long
                                 val serverGuid = 0x0000000000000002L
 
-                                // MCPE Server Advertisement String (Minecraft 1.21.x - 1.26.x NetherNet protocol compatibility)
+                                // MCPE Server Advertisement String (Minecraft 1.21.x compatibility)
                                 val motd = config.name.replace(";", "")
                                 val subMotd = "PumpkinMC Server"
-                                // Protocol 766 (1.21.40+) / 770+ (1.26+)
-                                val pongString = "MCPE;§6$motd§r;770;1.26.51;0;${config.maxPlayers};$serverGuid;$subMotd;Survival;1;$bedrockPort;$bedrockPort;"
+                                // Protocol 766 (Minecraft Bedrock 1.21.50+)
+                                val pongString = "MCPE;§6$motd§r;766;1.21.50;0;${config.maxPlayers};$serverGuid;$subMotd;Survival;1;$bedrockPort;$bedrockPort;"
                                 val pongBytes = pongString.toByteArray(StandardCharsets.UTF_8)
 
                                 val responseBuffer = ByteBuffer.allocate(1 + 8 + 8 + 16 + 2 + pongBytes.size)
